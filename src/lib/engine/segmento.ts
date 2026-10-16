@@ -23,7 +23,7 @@ export function segmentoDe(r: Pick<Registro, "empleados" | "ingresos_estimados" 
 }
 
 /** Señales que el coordinador dejó en las notas y que las reglas sí pueden usar. */
-export function señalesNota(notas: string | null) {
+export function senalesNota(notas: string | null) {
   const n = (notas ?? "").toLowerCase();
   return {
     pideSenior: /senior/.test(n),

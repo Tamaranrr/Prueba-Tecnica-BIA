@@ -52,7 +52,7 @@ const anthropic = () => (cliente ??= new Anthropic());
 
 interface Eleccion { usuario_id: number; razon: string; prompt: string; cruda: string }
 
-async function preguntar(sistema: string, mensaje: string): Promise<{ parsed: z.infer<typeof Respuesta> | null; cruda: string; refusal: boolean }> {
+async function preguntar(sistema: string, mensaje: string): Promise<{ parsed: z.infer<typeof Respuesta> | null; cruda: string; refusal: boolean; uso: { entrada: number; salida: number } }> {
   const resp = await anthropic().messages.parse({
     model: MODELO_IA,
     max_tokens: 4000,
@@ -61,7 +61,7 @@ async function preguntar(sistema: string, mensaje: string): Promise<{ parsed: z.
     output_config: { effort: "low", format: zodOutputFormat(Respuesta) },
   });
   const cruda = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-  return { parsed: resp.parsed_output ?? null, cruda, refusal: resp.stop_reason === "refusal" };
+  return { parsed: resp.parsed_output ?? null, cruda, refusal: resp.stop_reason === "refusal", uso: { entrada: resp.usage.input_tokens, salida: resp.usage.output_tokens } };
 }
 
 /**
@@ -72,11 +72,12 @@ async function preguntar(sistema: string, mensaje: string): Promise<{ parsed: z.
  */
 export async function proponerIA(
   d: DatosMotor, params: ParametrosMotor, limite: number, alAvanzar?: (hechos: number, total: number) => void,
-): Promise<ResultadoMotor & { sin_procesar: number }> {
+): Promise<ResultadoMotor & { sin_procesar: number; uso: { entrada: number; salida: number; llamadas: number } }> {
   if (!process.env.ANTHROPIC_API_KEY) throw new ErrorNegocio("Falta ANTHROPIC_API_KEY en el servidor: no se puede usar el método de IA.");
   const { carga, usuarios, ctx, retenidos, porAsignar } = prepararLote("ia", d, params);
   const lote = porAsignar.slice(0, limite);
   const propuestas: Propuesta[] = [];
+  const uso = { entrada: 0, salida: 0, llamadas: 0 };
   let hechos = 0;
 
   for (const r of lote) {
@@ -95,6 +96,7 @@ export async function proponerIA(
     try {
       const r1 = await preguntar(PROMPT_SISTEMA, mensaje);
       cruda = r1.cruda;
+      uso.entrada += r1.uso.entrada; uso.salida += r1.uso.salida; uso.llamadas++;
       if (r1.refusal) fallo = "el modelo rechazó la solicitud";
       else if (!r1.parsed) fallo = "la respuesta no cumplió el formato";
       else if (!elegibles.some((e) => e.usuario_id === r1.parsed!.usuario_id)) fallo = `eligió a #${r1.parsed.usuario_id}, que no estaba entre los candidatos`;
@@ -121,5 +123,5 @@ export async function proponerIA(
     }
     alAvanzar?.(++hechos, lote.length);
   }
-  return { metodo: "ia", parametros: params, propuestas, retenidos, cargaFinal: carga, sin_procesar: porAsignar.length - lote.length };
+  return { metodo: "ia", parametros: params, propuestas, retenidos, cargaFinal: carga, sin_procesar: porAsignar.length - lote.length, uso };
 }

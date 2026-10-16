@@ -1,5 +1,5 @@
 import { diasEntre } from "./filtros";
-import { segmentoDe, señalesNota } from "./segmento";
+import { segmentoDe, senalesNota } from "./segmento";
 import type { EvaluacionCandidato, ParametrosMotor, Registro, Usuario } from "./tipos";
 
 /** Estado mutable que un método puede necesitar durante un lote. */
@@ -66,7 +66,7 @@ export function grupoParaCuenta(seg: string, elegibles: EvaluacionCandidato[], u
 export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo): Seleccion {
   const p = params.pesos;
   const seg = segmentoDe(registro);
-  const nota = señalesNota(registro.notas);
+  const nota = senalesNota(registro.notas);
   const anotar: NonNullable<Seleccion["anotar"]> = {};
   const { pool, nota: nota_pool } = grupoParaCuenta(seg, elegibles, usuarios, params);
   for (const c of elegibles) if (!pool.includes(c)) anotar[c.usuario_id] = { puntaje: undefined, desglose: { fuera_del_grupo_de_expertos_corporativos: 0 } };
