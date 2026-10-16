@@ -10,7 +10,8 @@
     "seed": "tsx --env-file=.env.local scripts/seed.mts",
     "test": "tsx --test tests/*.test.ts",
     "reset": "tsx --env-file=.env.local scripts/reset-traza.mts",
-    "seed:dry": "tsx scripts/seed.mts --dry"
+    "seed:dry": "tsx scripts/seed.mts --dry",
+    "claves": "tsx --env-file=.env.local scripts/claves.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",

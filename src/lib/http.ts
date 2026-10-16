@@ -1,4 +1,4 @@
-import { ErrorNegocio } from "./db";
+import { ErrorAuth, ErrorNegocio } from "./db";
 import type { Solicitud } from "./servicio";
 
 /** Ejecuta un handler y traduce errores: de negocio → 400, el resto → 500 sin filtrar detalles internos. */
@@ -6,6 +6,7 @@ export async function responder(fn: () => Promise<unknown>) {
   try {
     return Response.json(await fn());
   } catch (e) {
+    if (e instanceof ErrorAuth) return Response.json({ error: e.message }, { status: e.estado });
     if (e instanceof ErrorNegocio) return Response.json({ error: e.message, detalle: e.detalle }, { status: 400 });
     console.error(e);
     return Response.json({ error: "Error interno del servidor." }, { status: 500 });

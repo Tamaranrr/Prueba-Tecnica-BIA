@@ -37,7 +37,7 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
     if (!actor || destino === "") return;
     setEnviando(true); setErrorForm(null);
     try {
-      await api("/api/reasignar", { registro_id: id, usuario_id: destino, motivo, ejecutado_por: actor, fechaReferencia: fecha });
+      await api("/api/reasignar", { registro_id: id, usuario_id: destino, motivo, fechaReferencia: fecha });
       setMotivo(""); setDestino("");
       await alCambiar(`Registro reasignado a ${usuario(Number(destino))?.nombre}.`);
     } catch (e) { setErrorForm((e as Error).message); }

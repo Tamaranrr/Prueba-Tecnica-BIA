@@ -2,11 +2,13 @@ import { calcularCarga, duenosActuales } from "@/lib/engine/carga";
 import { ausenciaVigente } from "@/lib/engine/filtros";
 import { segmentoDe } from "@/lib/engine/segmento";
 import { responder } from "@/lib/http";
+import { requerirSesion } from "@/lib/sesion";
 import { hoy, leerTodo } from "@/lib/servicio";
 
 // Datos para la consola: pendientes, equipo con su carga y registros en poder de cada vendedor.
 export const GET = (req: Request) =>
   responder(async () => {
+    await requerirSesion(req);
     const fecha = new URL(req.url).searchParams.get("fecha") ?? hoy();
     const b = await leerTodo();
     const carga = calcularCarga(b.registros, b.actividad, b.vigentes);

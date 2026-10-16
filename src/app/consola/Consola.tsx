@@ -5,6 +5,7 @@ import { api, type Datos } from "@/lib/cliente";
 import { Auditoria } from "./Auditoria";
 import { Detalle } from "./Detalle";
 import { Equipo } from "./Equipo";
+import { Ingreso, type UsuarioSesion } from "./Ingreso";
 import { Registros } from "./Registros";
 import { Reparto } from "./Reparto";
 import { esperaDe } from "./TablaRegistros";
@@ -22,7 +23,8 @@ export function Consola() {
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("reparto");
-  const [actor, setActor] = useState<number | null>(null);
+  const [sesion, setSesion] = useState<UsuarioSesion | null | undefined>(undefined); // undefined = comprobando
+  const [avisoIngreso, setAvisoIngreso] = useState<string | null>(null);
   const [fecha, setFecha] = useState("");
   const [detalle, setDetalle] = useState<number | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -32,14 +34,25 @@ export function Consola() {
   const aplicar = useCallback((d: Datos) => {
     setDatos(d);
     setFecha((x) => x || d.fecha);
-    setActor((a) => a ?? d.usuarios.find((u) => u.rol === "admin")?.id ?? null);
     setError(null);
   }, []);
+  // Una respuesta 401 en cualquier momento (sesión vencida) devuelve a la pantalla de ingreso.
+  const falla = useCallback((e: Error) => {
+    if (/inicia sesión|ya no tiene acceso/i.test(e.message)) { setSesion(null); setAvisoIngreso("Tu sesión terminó. Vuelve a ingresar."); }
+    else setError(e.message);
+  }, []);
   const cargar = useCallback((f?: string) =>
-    api<Datos>(f ? `/api/datos?fecha=${f}` : "/api/datos").then(aplicar).catch((e: Error) => setError(e.message)), [aplicar]);
+    api<Datos>(f ? `/api/datos?fecha=${f}` : "/api/datos").then(aplicar).catch(falla), [aplicar, falla]);
   useEffect(() => {
-    api<Datos>("/api/datos").then(aplicar).catch((e: Error) => setError(e.message));
+    api<{ usuario: UsuarioSesion }>("/api/sesion")
+      .then((r) => { setSesion(r.usuario); return api<Datos>("/api/datos").then(aplicar); })
+      .catch((e: Error) => { if (/inicia sesión|ya no tiene acceso/i.test(e.message)) setSesion(null); else { setSesion(null); setAvisoIngreso(e.message); } });
   }, [aplicar]);
+  const entrar = (u: UsuarioSesion) => { setSesion(u); setAvisoIngreso(null); cargar(); };
+  const salir = async () => {
+    await fetch("/api/sesion", { method: "DELETE" });
+    setSesion(null); setDatos(null); setDetalle(null); setSeleccion(new Set()); setFecha(""); setAvisoIngreso(null);
+  };
 
   const cambioTraza = async (mensaje: string) => {
     setAviso(mensaje); setVersion((v) => v + 1); setSeleccion(new Set());
@@ -61,10 +74,10 @@ export function Consola() {
     };
   }, [datos]);
 
+  if (sesion === undefined) return <p className="m-8 text-slate-500">Cargando…</p>;
+  if (sesion === null) return <Ingreso alEntrar={entrar} aviso={avisoIngreso} />;
   if (error) return <p className="m-8 rounded-lg bg-rose-50 p-4 text-rose-800">No se pudo cargar: {error}</p>;
   if (!datos || !kpis) return <p className="m-8 text-slate-500">Cargando…</p>;
-
-  const ejecutores = datos.usuarios.filter((u) => ["admin", "lider"].includes(u.rol) && u.activo);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -75,11 +88,8 @@ export function Consola() {
             <p className="text-sm text-slate-400">Reparto con previsualización y traza completa</p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <label className="flex items-center gap-2 text-slate-300">Ejecuta
-              <select className={`${campo} text-slate-900`} value={actor ?? ""} onChange={(e) => setActor(Number(e.target.value))}>
-                {ejecutores.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.rol})</option>)}
-              </select>
-            </label>
+            <span className="text-slate-300">Sesión: <b className="text-white">{sesion.nombre}</b> ({sesion.rol})</span>
+            <button className="rounded-lg border border-slate-600 px-3 py-1.5 text-slate-200 hover:bg-slate-800" onClick={salir}>Cerrar sesión</button>
             <label className="flex items-center gap-2 text-slate-300" title="Fecha usada para ausencias, ingreso y antigüedad. Queda guardada en la traza.">Fecha de referencia
               <input type="date" className={`${campo} text-slate-900`} value={fecha}
                 onChange={(e) => { setFecha(e.target.value); if (e.target.value) cargar(e.target.value); }} />
@@ -107,14 +117,14 @@ export function Consola() {
 
         {aviso && <p role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">{aviso}</p>}
 
-        {tab === "reparto" && <Reparto datos={datos} actor={actor} fecha={fecha} abrir={setDetalle} alEjecutar={cambioTraza} seleccion={seleccion} setSeleccion={setSeleccion} />}
+        {tab === "reparto" && <Reparto datos={datos} actor={sesion.id} fecha={fecha} abrir={setDetalle} alEjecutar={cambioTraza} seleccion={seleccion} setSeleccion={setSeleccion} />}
         {tab === "registros" && <Registros datos={datos} abrir={setDetalle} seleccion={seleccion} setSeleccion={setSeleccion} irARepartir={() => setTab("reparto")} />}
         {tab === "equipo" && <Equipo datos={datos} />}
         {tab === "auditoria" && <Auditoria version={version} />}
       </div>
 
       {detalle !== null && (
-        <Detalle key={detalle} id={detalle} datos={datos} actor={actor} fecha={fecha} version={version}
+        <Detalle key={detalle} id={detalle} datos={datos} actor={sesion.id} fecha={fecha} version={version}
           cerrar={() => setDetalle(null)} alCambiar={cambioTraza} />
       )}
     </div>

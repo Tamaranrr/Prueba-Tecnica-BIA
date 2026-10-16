@@ -30,6 +30,7 @@ create table usuarios (
   capacidad_maxima  int,               -- null = no definida (bandera sin_capacidad)
   fecha_ingreso     date,
   activo            boolean not null,
+  clave_hash        text,                           -- ingreso a la consola (scrypt); solo admin y líderes. Se crea con npm run claves
   banderas          text[] not null default '{}',   -- problemas de calidad detectados al cargar
   datos_originales  jsonb not null                  -- fila tal cual venía en el CSV
 );
@@ -145,3 +146,7 @@ create table if not exists notas_senales (
   creada_en       timestamptz not null default now()
 );
 alter table notas_senales enable row level security;
+
+-- ───────────── Ingreso a la consola ─────────────
+-- Seguro de correr en una base que ya tiene datos: solo agrega la columna.
+alter table usuarios add column if not exists clave_hash text;

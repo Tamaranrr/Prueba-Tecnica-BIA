@@ -71,7 +71,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
     if (!confirm(`Se asignarán ${prev.resumen.asignables} registros con el método "${prev.metodo}". ¿Confirmar?`)) return;
     setCargando(true); setError(null);
     try {
-      const r = await api<{ asignados: number }>("/api/ejecutar", { ...JSON.parse(prevSol), ejecutado_por: actor, preview_id: prev.preview_id });
+      const r = await api<{ asignados: number }>("/api/ejecutar", { ...JSON.parse(prevSol), preview_id: prev.preview_id });
       setPrev(null);
       await alEjecutar(`Listo: ${r.asignados} registros asignados. Quedó guardado en Auditoría.`);
     } catch (e) { setError((e as Error).message); }

@@ -35,7 +35,8 @@ interface FilaAsignacion {
 export async function leerTodo() {
   const c = db();
   const [usuarios, registros, ausencias, actividad, vigentes] = await Promise.all([
-    c.from("usuarios").select("*").order("id"),
+    // Columnas explícitas: nunca devolver clave_hash ni datos_originales al navegador.
+    c.from("usuarios").select("id,nombre,email,rol,equipo_id,zona,segmento_experto,capacidad_maxima,fecha_ingreso,activo,banderas").order("id"),
     c.from("registros").select("*").order("id"),
     c.from("ausencias").select("*"),
     c.from("actividad").select("*"),
