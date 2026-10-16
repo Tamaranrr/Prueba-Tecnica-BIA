@@ -3,7 +3,7 @@ import { calcularCarga, duenosActuales } from "./engine/carga";
 import { evaluarCandidato } from "./engine/filtros";
 import { parametros, proponer, type DatosMotor } from "./engine/motor";
 import type {
-  Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, ResultadoMotor, Usuario,
+  Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, Usuario,
 } from "./engine/tipos";
 
 export type MetodoDeterminista = Exclude<Metodo, "ia">;
