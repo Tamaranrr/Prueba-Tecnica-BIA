@@ -2,7 +2,7 @@ import { calcularCarga, duenosActuales } from "@/lib/engine/carga";
 import { calcularPerfiles, resumenDe } from "@/lib/engine/cartera";
 import { explicarAsignacion } from "@/lib/engine/explicar";
 import { ausenciaProxima, ausenciaVigente, capacidadEfectiva } from "@/lib/engine/filtros";
-import { prepararLote } from "@/lib/engine/motor";
+import { prepararLote, proponer } from "@/lib/engine/motor";
 import { razonPrioridad } from "@/lib/engine/prioridad";
 import { segmentoDe } from "@/lib/engine/segmento";
 import { PARAMETROS_DEFECTO, type EvaluacionCandidato } from "@/lib/engine/tipos";
@@ -34,6 +34,8 @@ export const GET = (req: Request) =>
     const prep = prepararLote("reglas", lote.datos, lote.params);
     const prioridad = new Map(prep.porAsignar.map((r, i) => [r.id, { posicion: i + 1, razon: razonPrioridad(r, lote.params, fecha) }]));
     const retenidos = new Map(prep.retenidos.map((x) => [x.registro_id, x.razones]));
+    // Pendientes que hoy no tienen ningún vendedor que pase los filtros duros (para el centro de alertas).
+    const sinCandidato = proponer("reglas", lote.datos, lote.params).propuestas.filter((p) => p.usuario_id === null).map((p) => p.registro_id);
 
     // A quién se le asignó cada registro, quién lo hizo y por qué (en lenguaje simple).
     const c = db();
@@ -51,6 +53,7 @@ export const GET = (req: Request) =>
       // La fecha de los datos (último movimiento registrado) y la del reloj: la consola avisa cuando difieren.
       fecha_datos: fechaDatos,
       fecha_reloj: hoy(),
+      sin_candidato: sinCandidato,
       ultima_ejecucion: (ok(ult, "ejecuciones") as unknown as unknown[])[0] ?? null,
       usuarios: b.usuarios.map((u) => {
         const cap = capacidadEfectiva(u, fecha, PARAMETROS_DEFECTO.capacidadRampa);

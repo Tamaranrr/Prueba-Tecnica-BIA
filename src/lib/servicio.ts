@@ -4,7 +4,8 @@ import { calcularPerfiles, cuentasFrias, DIAS_FRIA } from "./engine/cartera";
 import { contextoRegistro, evaluarCandidato } from "./engine/filtros";
 import { marcarDuplicadosEnTrabajo } from "./engine/duplicados";
 import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
-import { leerSenales } from "./notasServicio";
+import { leerSenales, leerSenalesEnCache } from "./notasServicio";
+import { medirResultado, type Medicion } from "./engine/metricas";
 import type { SenalesNota } from "./notas";
 import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, OLA_DEFECTO, PROMPT_VERSION, proponerIA, proponerIATodo } from "./ia";
 import { esVivo } from "./engine/tipos";
@@ -322,4 +323,38 @@ export async function trazaDeRegistro(registroId: number) {
   const registro = ok(reg, "registro");
   if (!registro) throw new ErrorNegocio("El registro no existe.");
   return { registro, asignaciones: ok(asigs, "asignaciones"), actividad: ok(act, "actividad") };
+}
+
+export interface FilaComparacion {
+  metodo: Metodo; medicion: Medicion;
+  /** Solo IA: se toma la última previsualización guardada (consultar al modelo cuesta tiempo y dinero). */
+  origen?: { preview_id: string; creada_en: string; misma_fecha: boolean };
+}
+
+/**
+ * Corre los métodos deterministas sobre los mismos pendientes y mide cada resultado. Solo lee: no escribe ni llama al modelo.
+ * El método de IA aparece si hay una previsualización guardada reciente (la última, sin ejecutar, de la misma fecha).
+ */
+export async function compararMetodos(fechaReferencia?: string) {
+  const base = await leerTodo();
+  const fecha = fechaReferencia ?? fechaOperacion(base);
+  const senales = await leerSenalesEnCache(base.registros.filter((r) => r.estado === "nuevo").map((r) => r.notas));
+  const ctx = { usuarios: base.usuarios, registros: base.registros, ausencias: base.ausencias, fecha };
+  const filas: FilaComparacion[] = [];
+  let pendientes = 0;
+  for (const metodo of ["round_robin", "balanceo_carga", "reglas"] as const) {
+    const { resultado, datos } = planificar(base, { metodo, alcance: { tipo: "pendientes" }, fechaReferencia: fecha }, senales);
+    pendientes = datos.registros.length;
+    filas.push({ metodo, medicion: medirResultado(resultado, ctx) });
+  }
+  const { data } = await db().from("previsualizaciones").select("id,solicitud,resultado,creada_en")
+    .eq("metodo", "ia").is("usada_en", null).order("creada_en", { ascending: false }).limit(1);
+  const p = ((data ?? []) as unknown as { id: string; solicitud: Solicitud; resultado: ResultadoMotor; creada_en: string }[])[0];
+  if (p && p.solicitud.alcance.tipo === "pendientes" && Date.now() - Date.parse(p.creada_en) <= 3_600_000) {
+    filas.push({
+      metodo: "ia", medicion: medirResultado(p.resultado, ctx),
+      origen: { preview_id: p.id, creada_en: p.creada_en, misma_fecha: p.resultado.parametros.fechaReferencia === fecha },
+    });
+  }
+  return { fecha, pendientes, filas };
 }

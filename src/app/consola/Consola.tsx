@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Datos } from "@/lib/cliente";
 import { Auditoria } from "./Auditoria";
+import { Comparador } from "./Comparador";
+import { Resumen } from "./Resumen";
 import { Detalle } from "./Detalle";
 import { Equipo } from "./Equipo";
 import { Ingreso, type UsuarioSesion } from "./Ingreso";
@@ -12,7 +14,9 @@ import { esperaDe } from "./TablaRegistros";
 import { campo, Kpi } from "./ui";
 
 const TABS = [
+  { id: "resumen", nombre: "Resumen" },
   { id: "reparto", nombre: "Repartir" },
+  { id: "comparador", nombre: "Comparar métodos" },
   { id: "registros", nombre: "Registros" },
   { id: "equipo", nombre: "Equipo" },
   { id: "auditoria", nombre: "Auditoría" },
@@ -24,7 +28,7 @@ const fechaLarga = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateStri
 export function Consola() {
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabId>("reparto");
+  const [tab, setTab] = useState<TabId>("resumen");
   const [sesion, setSesion] = useState<UsuarioSesion | null | undefined>(undefined); // undefined = comprobando
   const [avisoIngreso, setAvisoIngreso] = useState<string | null>(null);
   const [fecha, setFecha] = useState("");
@@ -125,6 +129,8 @@ export function Consola() {
 
         {aviso && <p role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">{aviso}</p>}
 
+        {tab === "resumen" && <Resumen datos={datos} abrir={setDetalle} irA={setTab} />}
+        {tab === "comparador" && <Comparador key={`${fecha}-${version}`} fecha={fecha || datos.fecha} irARepartir={() => setTab("reparto")} />}
         {tab === "reparto" && <Reparto datos={datos} actor={sesion.id} fecha={fecha} abrir={setDetalle} alEjecutar={cambioTraza} seleccion={seleccion} setSeleccion={setSeleccion} />}
         {tab === "registros" && <Registros datos={datos} abrir={setDetalle} seleccion={seleccion} setSeleccion={setSeleccion} irARepartir={() => setTab("reparto")} irAAuditoria={() => setTab("auditoria")} />}
         {tab === "equipo" && <Equipo datos={datos} />}

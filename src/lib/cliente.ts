@@ -22,7 +22,16 @@ export type RegistroConsola = Registro & {
   asignacion: AsignacionVista | null;
 };
 export interface UltimaEjecucion { id: string; tipo: string; metodo: string; ejecutado_por: string; creada_en: string; total_registros: number }
-export interface Datos { fecha: string; fecha_datos: string; fecha_reloj: string; usuarios: UsuarioConsola[]; registros: RegistroConsola[]; ultima_ejecucion: UltimaEjecucion | null }
+export interface Datos { fecha: string; fecha_datos: string; fecha_reloj: string; usuarios: UsuarioConsola[]; registros: RegistroConsola[]; sin_candidato: number[]; ultima_ejecucion: UltimaEjecucion | null }
+export interface Medicion {
+  asignados: number; sin_candidato: number; retenidos: number; pct_segmento: number | null; pct_zona: number | null;
+  grandes: number; grandes_con_experto: number; personas_con_grandes: number; ocupacion_maxima: number; desbalance: number;
+  reglas_rotas: number; respaldos_ia: number;
+}
+export interface Comparacion {
+  fecha: string; pendientes: number;
+  filas: { metodo: string; medicion: Medicion; origen?: { preview_id: string; creada_en: string; misma_fecha: boolean } }[];
+}
 
 export type PropuestaPreview = Propuesta & { dueno_actual: number | null };
 export interface Preview {

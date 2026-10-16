@@ -15,6 +15,8 @@
 
 > "Un coordinador reparte a mano los registros en un Excel. Resultado: registros que nadie toca durante días, vendedores con 200 cuentas y otros con 12, peleas por las cuentas grandes, y nadie puede explicar por qué la empresa X quedó con Y. Construí tres cosas: un motor de asignación con cuatro métodos, esta consola para operarlo, y una traza en base de datos donde queda todo."
 
+*Opcional, 20 segundos: abrir **Resumen** y mostrar las alertas de calidad (duplicados, "no insistir", sin vendedor válido) y que cada una lleva a una acción.*
+
 ## 0:30 a 1:30 · Lo que ya tiene cada vendedor (pestaña **Equipo**)
 > "Antes de repartir hay que saber qué tiene cada uno. Los datos venían sucios y no los limpié a escondidas: los normalicé al cargar y marqué cada cosa. Y calculo la cartera de cada vendedor a partir de la actividad."
 
@@ -23,6 +25,8 @@ Señalar en pantalla:
 - **Nivel y cartera** de cada vendedor: cuántas cuentas, de qué segmento, cuánto suman en ingresos, acciones de los últimos 14 días y cuentas frías.
 - **Julián Camargo** ausente por vacaciones; **Andrés Cuéllar** *"se ausenta el 28"* y no tiene capacidad definida; **Valentina Zapata** con incapacidad abierta; **Nicolás Restrepo** inactivo.
 - **Laura Bermúdez**: recién entrada (rampa) con capacidad provisional de 10. *"Solo recibe cuentas pyme, para nivelarse."*
+
+*Antes de repartir, 30 segundos en **Comparar métodos**: los mismos 71 pendientes con round-robin, balanceo y reglas. Señalar que los métodos simples ignoran la especialidad (26 % y 30 % con experto de su segmento) y que ninguno rompe una regla dura.*
 
 ## 1:30 a 3:00 · Repartir y previsualizar (pestaña **Repartir**)
 1. Alcance: *Todos los pendientes (71)*. Método: **Reglas de negocio**. Pulsar **Previsualizar**.
