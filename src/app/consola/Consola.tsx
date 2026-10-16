@@ -126,7 +126,7 @@ export function Consola() {
         {aviso && <p role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">{aviso}</p>}
 
         {tab === "reparto" && <Reparto datos={datos} actor={sesion.id} fecha={fecha} abrir={setDetalle} alEjecutar={cambioTraza} seleccion={seleccion} setSeleccion={setSeleccion} />}
-        {tab === "registros" && <Registros datos={datos} abrir={setDetalle} seleccion={seleccion} setSeleccion={setSeleccion} irARepartir={() => setTab("reparto")} />}
+        {tab === "registros" && <Registros datos={datos} abrir={setDetalle} seleccion={seleccion} setSeleccion={setSeleccion} irARepartir={() => setTab("reparto")} irAAuditoria={() => setTab("auditoria")} />}
         {tab === "equipo" && <Equipo datos={datos} />}
         {tab === "auditoria" && <Auditoria version={version} />}
       </div>

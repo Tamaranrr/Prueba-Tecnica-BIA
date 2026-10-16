@@ -6,7 +6,7 @@ import { marcarDuplicadosEnTrabajo } from "./engine/duplicados";
 import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
 import { leerSenales } from "./notasServicio";
 import type { SenalesNota } from "./notas";
-import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, PROMPT_VERSION, proponerIA } from "./ia";
+import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, OLA_DEFECTO, PROMPT_VERSION, proponerIA, proponerIATodo } from "./ia";
 import { esVivo } from "./engine/tipos";
 import type {
   Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, ResultadoMotor, Usuario,
@@ -21,8 +21,8 @@ export type Alcance =
 
 export interface Solicitud {
   metodo: Metodo;
-  /** Solo método IA: máximo de registros que se consultan al modelo en esta corrida. */
-  ia?: { limite?: number };
+  /** Solo método IA: máximo de registros que se consultan al modelo en esta corrida, o `todo` para repartir todos los asignables. */
+  ia?: { limite?: number; todo?: boolean };
   alcance: Alcance;
   parametros?: Partial<ParametrosMotor>;
   fechaReferencia?: string;
@@ -126,7 +126,7 @@ export async function leerNotasDelLote(base: Base, sol: Solicitud) {
   return { senales: r.mapa, avisos: r.avisos, distintas: r.distintas, nuevas: r.nuevas };
 }
 
-export async function previsualizar(sol: Solicitud) {
+export async function previsualizar(sol: Solicitud, opts: { alAvanzar?: (hechos: number, total: number) => void } = {}) {
   const base = await leerTodo();
   const lectura = await leerNotasDelLote(base, sol);
   let resultado: ResultadoMotor;
@@ -134,8 +134,9 @@ export async function previsualizar(sol: Solicitud) {
   let preview_id: string | undefined;
   const { cargaInicial, duenos, datos, params } = armarLote(base, sol, lectura.senales);
   if (sol.metodo === "ia") {
+    // "Repartir todo": sin tope de registros y con consultas en olas paralelas (cada elección se revalida).
     const limite = Math.min(Math.max(Math.trunc(sol.ia?.limite ?? LIMITE_IA_DEFECTO), 1), LIMITE_IA_MAXIMO);
-    const r = await proponerIA(datos, params, limite);
+    const r = sol.ia?.todo ? await proponerIATodo(datos, params, { alAvanzar: opts.alAvanzar }) : await proponerIA(datos, params, limite, opts.alAvanzar);
     sin_procesar = r.sin_procesar;
     resultado = r;
     preview_id = (ok(await db().from("previsualizaciones").insert({ metodo: "ia", solicitud: sol as never, resultado: r as never } as never).select("id").single(), "guardar previsualización") as unknown as { id: string }).id;
@@ -261,7 +262,7 @@ export async function ejecutar(sol: Solicitud, actorId: unknown, previewId?: unk
     }));
     sinCandidato = prev.resultado.propuestas.length - filas.length;
     retenidos = prev.resultado.retenidos;
-    meta = { tipo: l.tipo, metodo: "ia", parametros: { ...prev.resultado.parametros, ia: { modelo: MODELO_IA, prompt: PROMPT_VERSION, limite: sol.ia?.limite ?? LIMITE_IA_DEFECTO, preview_id: previewId } }, actor, fecha: prev.resultado.parametros.fechaReferencia };
+    meta = { tipo: l.tipo, metodo: "ia", parametros: { ...prev.resultado.parametros, ia: { modelo: MODELO_IA, prompt: PROMPT_VERSION, limite: sol.ia?.todo ? "todos" : (sol.ia?.limite ?? LIMITE_IA_DEFECTO), ...(sol.ia?.todo ? { ola: OLA_DEFECTO } : {}), preview_id: previewId } }, actor, fecha: prev.resultado.parametros.fechaReferencia };
   } else {
     const { resultado } = planificar(base, sol, lectura.senales);
     filas = resultado.propuestas.filter((p) => p.usuario_id !== null).map((p) => ({

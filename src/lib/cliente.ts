@@ -9,8 +9,20 @@ export type UsuarioConsola = Usuario & {
   ausencia: AusenciaVista | null; ausencia_proxima: AusenciaVista | null;
   perfil: ResumenCartera;
 };
-export type RegistroConsola = Registro & { segmento: string; dueno_id: number | null };
-export interface Datos { fecha: string; fecha_datos: string; fecha_reloj: string; usuarios: UsuarioConsola[]; registros: RegistroConsola[] }
+/** La asignación vigente de un registro: a quién, quién la hizo, cuándo, con qué método y por qué, en lenguaje simple. */
+export interface AsignacionVista {
+  usuario_id: number; metodo: string; por: string; cuando: string; ejecucion_id: string; explicacion: string;
+}
+export type RegistroConsola = Registro & {
+  segmento: string; dueno_id: number | null;
+  /** Solo en registros nuevos: lugar en la cola de reparto y por qué. null si queda retenido. */
+  prioridad: { posicion: number; razon: string } | null;
+  /** Solo en registros nuevos que no se reparten: por qué quedan para revisión humana. */
+  retenido: string[] | null;
+  asignacion: AsignacionVista | null;
+};
+export interface UltimaEjecucion { id: string; tipo: string; metodo: string; ejecutado_por: string; creada_en: string; total_registros: number }
+export interface Datos { fecha: string; fecha_datos: string; fecha_reloj: string; usuarios: UsuarioConsola[]; registros: RegistroConsola[]; ultima_ejecucion: UltimaEjecucion | null }
 
 export type PropuestaPreview = Propuesta & { dueno_actual: number | null };
 export interface Preview {

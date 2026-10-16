@@ -1,7 +1,8 @@
 import { clonarPerfiles, perfilVacio, type PerfilVendedor } from "./cartera";
 import { contextoRegistro, evaluarCandidato, type ContextoFiltros } from "./filtros";
 import { balanceoCarga, reglas, roundRobin, type EstadoLote, type Seleccion } from "./metodos";
-import { segmentoDe, tamano } from "./segmento";
+import { compararPrioridad } from "./prioridad";
+import { segmentoDe } from "./segmento";
 import {
   PARAMETROS_DEFECTO, type Ausencia, type EvaluacionCandidato, type Metodo, type ParametrosMotor,
   type Propuesta, type Registro, type ResultadoMotor, type Retenido, type Usuario,
@@ -64,13 +65,8 @@ export function prepararLote(metodo: Metodo, d: DatosMotor, params: ParametrosMo
     if (razones.length) retenidos.push({ registro_id: r.id, razones });
     else porAsignar.push(r);
   }
-  // Orden de reparto: quien va primero elige primero. Primero el segmento (por defecto corporativo, industrial, pyme),
-  // dentro de él lo urgente según la lectura de la nota, luego el que más lleva esperando y por último el que más pesa.
-  const ordenSegmento = (r: Registro) => { const i = params.ordenSegmentos.indexOf(segmentoDe(r)); return i < 0 ? params.ordenSegmentos.length : i; };
-  const urgencia = (r: Registro) => (params.usarNotasIA ? ({ alta: 0, normal: 1, baja: 2 }[r.senales?.urgencia ?? "normal"]) : 1);
-  porAsignar.sort((a, b) =>
-    ordenSegmento(a) - ordenSegmento(b) || urgencia(a) - urgencia(b) || a.fecha_creacion.localeCompare(b.fecha_creacion) ||
-    tamano(b) - tamano(a) || a.id - b.id);
+  // Orden de reparto: quien va primero elige primero (ver prioridad.ts, la única definición del orden).
+  porAsignar.sort(compararPrioridad(params));
   return { carga, usuarios, ctx, perfiles, retenidos, porAsignar };
 }
 

@@ -111,14 +111,14 @@ El 88 % del texto exacto engaña: casi todo es "sin señal", y acierta cuando no
 
 ## Medición con las reglas finales
 
-Se midió con [scripts/evaluar-plan.mts](scripts/evaluar-plan.mts) sobre los 71 pendientes a la fecha de operación (27 de septiembre): 61 asignables y 10 retenidos (duplicados y quienes pidieron que no insistieran). Las reglas duras se comprueban con un cálculo **independiente del motor**. El método de IA usa `claude-haiku-5-5` y el prompt v4.
+Se midió con [scripts/evaluar-plan.mts](scripts/evaluar-plan.mts) sobre los 71 pendientes a la fecha de operación (27 de septiembre): 61 asignables y 10 retenidos (duplicados y quienes pidieron que no insistieran). Las reglas duras se comprueban con un cálculo **independiente del motor**. El método de IA usa `claude-haiku-5-5` y el prompt v5.
 
 | Método | Con experto de su segmento | En su zona | Cuentas grandes con experto corporativo | Ocupación máxima | Desbalance | Reglas duras rotas |
 |---|---|---|---|---|---|---|
 | Round-robin | 26 % | 100 % | 1 de 16 | 48 % | 14,5 pts | **0** |
 | Balanceo de carga | 30 % | 100 % | 2 de 16 | 48 % | 14,3 pts | **0** |
 | Reglas | 69 % | 74 % | 11 de 16 | 70 % | 18,4 pts | **0** |
-| IA (Haiku 5.5, prompt v4) | 67 % | 70 % | 11 de 16 | 53 % | 14,9 pts | **0** |
+| IA (Haiku 5.5, prompt v5) | 67 % | 70 % | 11 de 16 | 53 % | 14,9 pts | **0** |
 
 Lo que muestran los números, sin adornos:
 - **Ninguna regla dura se rompe, con ningún método.** Cero ausentes, cero a punto de ausentarse, cero inactivos, cero sin capacidad, cero cuentas grandes a quien lleva menos de 2 años y cero cuentas no pyme a quien está en rampa.
@@ -127,11 +127,13 @@ Lo que muestran los números, sin adornos:
 - **La IA y las reglas llegan casi al mismo lugar**, como en las rondas anteriores, porque la IA persigue la misma política escrita en el prompt. La IA reparte algo más parejo (53 % de ocupación máxima) y explica cada decisión.
 - **Los métodos simples ignoran la especialidad** (26 % y 30 %), como la operación de hoy (29 %). Son una línea de base, no una recomendación.
 - **Los urgentes** pasan de la posición media 31 a la 23 en la cola de 61 con la lectura de notas. Menos que antes porque ahora el orden de reparto es primero por segmento.
-- **Costo de la IA:** unos US$0,044 por los 61 registros (181.636 tokens de entrada y 52.180 de salida) y 322 segundos, unos 5,3 s por registro. Es secuencial, por eso tiene tope por corrida.
+- **Costo de la IA:** unos US$0,04 por los 61 registros. Secuencial tardaba 322 segundos (5,3 s por registro) y por eso tenía tope por corrida. Con **Repartir todo** (olas de 6 consultas en paralelo) tarda unos 74 segundos, sin respaldos y sin reglas duras rotas.
 
 **Cómo llegamos al prompt v4.** El prompt v1 ordenaba los criterios por importancia y el modelo los obedeció al pie de la letra: 100 % de segmento pero las cuentas grandes concentradas en una sola experta. El v2 se construyó con los mismos pesos que las reglas y el v3 sumó las señales de las notas; con ellos la IA igualó a las reglas. El v4 le da la cartera actual de cada candidato, el nivel de antigüedad y las reglas de balance de cuentas grandes. Se compararon Opus 5.5, Sonnet 5.5 y Haiku 5.5 como modelo que decide (ronda con el prompt v3): ninguno dominó y Haiku costó 29 veces menos que Opus, por eso es el modelo por defecto. Se cambia con `ANTHROPIC_MODEL`.
 
-**Salvedades:** no hay una asignación "correcta" de referencia, así que las métricas son aproximaciones de lo que el caso pide (experto, zona, balance, reglas). Es un solo lote de 61 registros y una sola corrida por método. No se midió la variación entre corridas de la IA con el prompt v4.
+**Repartir todo con IA.** Botón aparte en la pestaña Reparto que no toca la lógica principal. Revisa todos los pendientes de una vez, ordenados por prioridad (segmento, urgencia de las notas, días de espera y tamaño), sin tope de registros. Consulta al modelo de 6 en 6, revalida cada decisión con el estado actual (reglas duras, carga y tope de cuentas grandes), reencola hasta 2 veces y como último recurso usa balanceo. Muestra una barra de progreso en vivo y no guarda nada hasta que se ejecuta. La tabla de pendientes tiene una columna de Prioridad y la pestaña Registros muestra a quién se asignó, quién lo hizo, cuándo, con qué método y una explicación en lenguaje simple.
+
+**Salvedades:** no hay una asignación "correcta" de referencia, así que las métricas son aproximaciones de lo que el caso pide (experto, zona, balance, reglas). Es un solo lote de 61 registros y una sola corrida por método. No se midió la variación entre corridas de la IA con el prompt v5.
 
 ## Cómo correrlo
 

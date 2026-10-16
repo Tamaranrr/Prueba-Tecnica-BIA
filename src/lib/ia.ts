@@ -15,11 +15,11 @@ export const LIMITE_IA_MAXIMO = 40;
 
 const Respuesta = z.object({
   usuario_id: z.number().int().describe("id del vendedor elegido; debe ser uno de los candidatos listados"),
-  razon: z.string().describe("explicación breve (máx. 3 frases) de por qué este vendedor, citando los datos usados"),
+  razon: z.string().describe("explicación de 1 o 2 frases cortas, en lenguaje simple para un coordinador comercial: por qué este vendedor es la mejor opción para esta cuenta. Sin puntajes, sin ids y sin tecnicismos; menciona nombres de personas, zona, especialidad, carga o antigüedad solo si explican la decisión"),
 });
 
 /** Versión del prompt: queda en los parámetros de cada ejecución para poder comparar corridas. */
-export const PROMPT_VERSION = "v4";
+export const PROMPT_VERSION = "v5";
 
 /**
  * Prompt de sistema. La política (cuánto pesa cada criterio) sale de los mismos pesos del método de reglas, así el
@@ -74,8 +74,6 @@ export function construirMensaje(r: Registro, segmento: string, cands: Evaluacio
 let cliente: Anthropic | null = null;
 const anthropic = () => (cliente ??= new Anthropic());
 
-interface Eleccion { usuario_id: number; razon: string; prompt: string; cruda: string }
-
 async function preguntar(sistema: string, mensaje: string): Promise<{ parsed: z.infer<typeof Respuesta> | null; cruda: string; refusal: boolean; uso: { entrada: number; salida: number } }> {
   const resp = await anthropic().messages.parse({
     model: MODELO_IA,
@@ -88,65 +86,132 @@ async function preguntar(sistema: string, mensaje: string): Promise<{ parsed: z.
   return { parsed: resp.parsed_output ?? null, cruda, refusal: resp.stop_reason === "refusal", uso: { entrada: resp.usage.input_tokens, salida: resp.usage.output_tokens } };
 }
 
+export type RespuestaModelo = Awaited<ReturnType<typeof preguntar>>;
+export type Consultar = (sistema: string, mensaje: string) => Promise<RespuestaModelo>;
+
+export interface OpcionesIA {
+  /** Cuántos registros se consultan al modelo a la vez. 1 = secuencial: cada decisión ve la anterior. */
+  ola?: number;
+  alAvanzar?: (hechos: number, total: number) => void;
+  /** Para pruebas: reemplaza la llamada al modelo. */
+  consultar?: Consultar;
+}
+
+/** Tamaño de ola al repartir todo: seis consultas a la vez bajan los 61 registros de unos 5 minutos a cerca de uno. */
+export const OLA_DEFECTO = 6;
+
+export type ResultadoIA = ResultadoMotor & { sin_procesar: number; uso: { entrada: number; salida: number; llamadas: number } };
+
+/** Llama al modelo. Los fallos de la cuenta (no del registro) abortan todo; el resto devuelve el motivo para usar el respaldo. */
+async function consultarSeguro(consultar: Consultar, sistema: string, mensaje: string): Promise<{ resp?: RespuestaModelo; fallo: string }> {
+  try {
+    return { resp: await consultar(sistema, mensaje), fallo: "" };
+  } catch (e) {
+    // Fallos de cuenta (no del registro): abortar todo en vez de gastar llamadas y repartir sin IA en silencio.
+    if (e instanceof Anthropic.BadRequestError && /credit balance/i.test(e.message)) throw new ErrorNegocio("La cuenta de Anthropic no tiene saldo. Agrega créditos en console.anthropic.com → Plans & Billing y vuelve a intentar.");
+    if (e instanceof Anthropic.PermissionDeniedError || e instanceof Anthropic.NotFoundError) throw new ErrorNegocio(`Anthropic rechazó la solicitud (${e.status}): revisa la API key y el modelo ${MODELO_IA}.`);
+    if (e instanceof Anthropic.AuthenticationError) throw new ErrorNegocio("La API key de Anthropic no es válida.");
+    if (e instanceof Anthropic.RateLimitError) throw new ErrorNegocio("Anthropic limitó las solicitudes (rate limit). Espera un momento e intenta de nuevo, o reparte menos registros a la vez.");
+    return { fallo: (e as Error).message };
+  }
+}
+
 /**
- * Reparte un lote con IA. Los filtros duros corren ANTES: el modelo solo ve candidatos válidos y su
- * respuesta se valida después. Si el modelo falla o devuelve a alguien fuera de la lista, el registro
- * se asigna por balanceo de carga y queda marcado (`ia_respaldo`) con la razón del fallo.
- * Es secuencial a propósito: cada decisión cambia la carga que ve la siguiente.
+ * Núcleo del reparto con IA. Los filtros duros corren ANTES: el modelo solo ve candidatos válidos y su respuesta se
+ * valida después. Si el modelo falla o devuelve a alguien fuera de la lista, el registro se asigna por balanceo de
+ * carga y queda marcado (`ia_respaldo`) con la razón del fallo.
+ *
+ * Con `ola` mayor que 1, varios registros se consultan a la vez. Todos los de una ola ven la cartera tal como estaba
+ * al empezar la ola, así que cada elección se REVALIDA con el estado actual (carga, cupo y tope de cuentas grandes)
+ * antes de aceptarla: si una decisión anterior de la misma ola la invalidó, el registro se consulta de nuevo en la
+ * siguiente ola (hasta dos veces) y, si sigue chocando, se asigna por balanceo. Nunca se rompe una regla dura.
  */
-export async function proponerIA(
-  d: DatosMotor, params: ParametrosMotor, limite: number, alAvanzar?: (hechos: number, total: number) => void,
-): Promise<ResultadoMotor & { sin_procesar: number; uso: { entrada: number; salida: number; llamadas: number } }> {
-  if (!process.env.ANTHROPIC_API_KEY) throw new ErrorNegocio("Falta ANTHROPIC_API_KEY en el servidor: no se puede usar el método de IA.");
+async function procesarIA(d: DatosMotor, params: ParametrosMotor, limite: number, op: OpcionesIA): Promise<ResultadoIA> {
+  const consultar = op.consultar ?? preguntar;
+  if (!op.consultar && !process.env.ANTHROPIC_API_KEY) throw new ErrorNegocio("Falta ANTHROPIC_API_KEY en el servidor: no se puede usar el método de IA.");
   const { carga, usuarios, ctx, perfiles, retenidos, porAsignar } = prepararLote("ia", d, params);
   const lote = porAsignar.slice(0, limite);
+  const posicion = new Map(lote.map((r, i) => [r.id, i]));
   const propuestas: Propuesta[] = [];
   const uso = { entrada: 0, salida: 0, llamadas: 0 };
+  const sistema = construirSistema(params.pesos, params.topeGrandes);
+  const tamOla = Math.max(1, Math.floor(op.ola ?? 1));
+  const intentos = new Map<number, number>();
+  const cola = [...lote];
   let hechos = 0;
 
-  for (const r of lote) {
+  // Candidatos de un registro con el estado actual. Mismo grupo que ve el método de reglas: las cuentas grandes solo se
+  // le muestran al modelo con expertos corporativos.
+  const grupo = (r: Registro) => {
     const { evals, desborde } = evaluarRegistro(r, d, ctx);
-    // Mismo grupo que ve el método de reglas: las cuentas grandes solo se le muestran al modelo con expertos corporativos.
-    const seg0 = segmentoDe(r);
-    const { pool: elegibles, nota: notaGrupo } = grupoParaCuenta(seg0, evals.filter((e) => e.elegible), usuarios, params);
-    if (!elegibles.length) { propuestas.push(cerrarPropuesta(r, evals, desborde, null, carga, {}, perfiles)); continue; }
+    const { pool, nota } = grupoParaCuenta(segmentoDe(r), evals.filter((e) => e.elegible), usuarios, params);
+    return { evals, desborde, pool, nota };
+  };
 
-    const seg = seg0;
-    const mensaje = construirMensaje(r, seg, elegibles, usuarios, params.fechaReferencia);
-    const sistema = construirSistema(params.pesos, params.topeGrandes);
-    const prompt = `[SYSTEM]\n${sistema}\n\n[USER]\n${mensaje}`;
-    let eleccion: Eleccion | null = null;
-    let fallo = "";
-    let cruda: string | undefined;
-    try {
-      const r1 = await preguntar(sistema, mensaje);
-      cruda = r1.cruda;
-      uso.entrada += r1.uso.entrada; uso.salida += r1.uso.salida; uso.llamadas++;
-      if (r1.refusal) fallo = "el modelo rechazó la solicitud";
-      else if (!r1.parsed) fallo = "la respuesta no cumplió el formato";
-      else if (!elegibles.some((e) => e.usuario_id === r1.parsed!.usuario_id)) fallo = `eligió a #${r1.parsed.usuario_id}, que no estaba entre los candidatos`;
-      else eleccion = { usuario_id: r1.parsed.usuario_id, razon: r1.parsed.razon, prompt, cruda };
-    } catch (e) {
-      // Fallos de cuenta (no del registro): abortar todo en vez de gastar llamadas y repartir sin IA en silencio.
-      if (e instanceof Anthropic.BadRequestError && /credit balance/i.test(e.message)) throw new ErrorNegocio("La cuenta de Anthropic no tiene saldo. Agrega créditos en console.anthropic.com → Plans & Billing y vuelve a intentar.");
-      if (e instanceof Anthropic.PermissionDeniedError || e instanceof Anthropic.NotFoundError) throw new ErrorNegocio(`Anthropic rechazó la solicitud (${e.status}): revisa la API key y el modelo ${MODELO_IA}.`);
-      if (e instanceof Anthropic.AuthenticationError) throw new ErrorNegocio("La API key de Anthropic no es válida.");
-      if (e instanceof Anthropic.RateLimitError) throw new ErrorNegocio("Anthropic limitó las solicitudes (rate limit). Reduce el máximo de registros e intenta de nuevo.");
-      fallo = (e as Error).message;
-    }
+  while (cola.length) {
+    const ola = cola.splice(0, tamOla);
+    const prep = ola.map((r) => {
+      const g = grupo(r);
+      const mensaje = g.pool.length ? construirMensaje(r, segmentoDe(r), g.pool, usuarios, params.fechaReferencia) : "";
+      return { r, ...g, mensaje, prompt: `[SYSTEM]\n${sistema}\n\n[USER]\n${mensaje}` };
+    });
+    const respuestas = await Promise.all(prep.map((p) => (p.pool.length ? consultarSeguro(consultar, sistema, p.mensaje) : Promise.resolve(null))));
+    const reencolar: Registro[] = [];
 
-    if (eleccion) {
-      const sel = { usuario_id: eleccion.usuario_id, motivo: `IA (${MODELO_IA}): ${eleccion.razon}${notaGrupo ? ` [${notaGrupo.replace(/^; /, "")}]` : ""}` };
-      propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga, { prompt_enviado: eleccion.prompt, respuesta_modelo: eleccion.cruda, modelo: MODELO_IA }, perfiles));
-    } else {
-      // Respaldo determinista: nunca dejamos un registro colgado por un fallo del modelo.
-      const sel = balanceoCarga({ registro: r, elegibles, usuarios, params, estado: { pesosRR: {} } });
-      const p = cerrarPropuesta(r, evals, desborde, { ...sel, motivo: `Respaldo por balanceo de carga: ${fallo}. ${sel.motivo}` }, carga,
-        { prompt_enviado: prompt, respuesta_modelo: cruda, modelo: MODELO_IA }, perfiles);
-      p.banderas_decision.push("ia_respaldo");
-      propuestas.push(p);
+    for (let i = 0; i < prep.length; i++) {
+      const p = prep[i], rr = respuestas[i];
+      if (!rr) { propuestas.push(cerrarPropuesta(p.r, p.evals, p.desborde, null, carga, {}, perfiles)); op.alAvanzar?.(++hechos, lote.length); continue; }
+
+      let fallo = rr.fallo;
+      let eleccion: { usuario_id: number; razon: string } | null = null;
+      if (rr.resp) {
+        uso.llamadas++; uso.entrada += rr.resp.uso.entrada; uso.salida += rr.resp.uso.salida;
+        const m = rr.resp;
+        if (m.refusal) fallo = "el modelo rechazó la solicitud";
+        else if (!m.parsed) fallo = "la respuesta no cumplió el formato";
+        else if (!p.pool.some((e) => e.usuario_id === m.parsed!.usuario_id)) fallo = `eligió a #${m.parsed.usuario_id}, que no estaba entre los candidatos`;
+        else eleccion = { usuario_id: m.parsed.usuario_id, razon: m.parsed.razon };
+      }
+
+      // Revalidar con el estado actual: las decisiones anteriores de esta misma ola pudieron llenar a ese vendedor.
+      let vigente = { pool: p.pool, nota: p.nota, desborde: p.desborde, evals: p.evals };
+      if (tamOla > 1) {
+        vigente = grupo(p.r);
+        if (eleccion && !vigente.pool.some((e) => e.usuario_id === eleccion!.usuario_id)) {
+          const n = (intentos.get(p.r.id) ?? 0) + 1;
+          intentos.set(p.r.id, n);
+          if (n <= 2 && vigente.pool.length) { reencolar.push(p.r); continue; }   // se vuelve a consultar con el estado nuevo
+          fallo = "su elección chocó con otras decisiones tomadas al mismo tiempo";
+          eleccion = null;
+        }
+      }
+
+      const extra = { prompt_enviado: p.prompt, respuesta_modelo: rr.resp?.cruda, modelo: MODELO_IA };
+      if (eleccion) {
+        const sel = { usuario_id: eleccion.usuario_id, motivo: `IA (${MODELO_IA}): ${eleccion.razon}${p.nota ? ` [${p.nota.replace(/^; /, "")}]` : ""}` };
+        propuestas.push(cerrarPropuesta(p.r, p.evals, p.desborde, sel, carga, extra, perfiles));
+      } else if (!vigente.pool.length) {
+        propuestas.push(cerrarPropuesta(p.r, vigente.evals, vigente.desborde, null, carga, extra, perfiles));
+      } else {
+        // Respaldo determinista: nunca dejamos un registro colgado por un fallo del modelo.
+        const sel = balanceoCarga({ registro: p.r, elegibles: vigente.pool, usuarios, params, estado: { pesosRR: {} } });
+        const prop = cerrarPropuesta(p.r, vigente.evals, vigente.desborde, { ...sel, motivo: `Respaldo por balanceo de carga: ${fallo}. ${sel.motivo}` }, carga, extra, perfiles);
+        prop.banderas_decision.push("ia_respaldo");
+        propuestas.push(prop);
+      }
+      op.alAvanzar?.(++hechos, lote.length);
     }
-    alAvanzar?.(++hechos, lote.length);
+    cola.unshift(...reencolar);
   }
+
+  propuestas.sort((a, b) => (posicion.get(a.registro_id) ?? 0) - (posicion.get(b.registro_id) ?? 0));
   return { metodo: "ia", parametros: params, propuestas, retenidos, cargaFinal: carga, sin_procesar: porAsignar.length - lote.length, uso };
 }
+
+/** Reparto con IA de un máximo de `limite` registros, uno tras otro (cada decisión ve la anterior). */
+export const proponerIA = (d: DatosMotor, params: ParametrosMotor, limite: number, alAvanzar?: (hechos: number, total: number) => void) =>
+  procesarIA(d, params, limite, { alAvanzar });
+
+/** Reparto con IA de TODOS los registros asignables, en olas paralelas con revalidación. */
+export const proponerIATodo = (d: DatosMotor, params: ParametrosMotor, op: OpcionesIA = {}) =>
+  procesarIA(d, params, Number.POSITIVE_INFINITY, { ola: OLA_DEFECTO, ...op });

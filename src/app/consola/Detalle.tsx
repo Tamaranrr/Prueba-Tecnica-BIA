@@ -75,7 +75,8 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
             {vigente ? (
               <>
                 <p><b>{vigente.usuarios.nombre}</b> lo tiene por una {vigente.ejecuciones.tipo === "reasignacion" ? "reasignación" : "asignación"} del {fmtFecha(vigente.creada_en)}, ejecutada por <b>{vigente.ejecutado_por}</b> con el método <b>{vigente.metodo}</b>.</p>
-                <p className="mt-2">{vigente.motivo}</p>
+                <p className="mt-2 font-medium">{reg.asignacion?.explicacion ?? vigente.motivo}</p>
+                {reg.asignacion && <p className="mt-1 text-xs text-slate-500">Detalle técnico: {vigente.motivo}</p>}
                 {vigente.reemplaza_a && <p className="mt-2 text-slate-600">Reemplazó a la asignación anterior de {traza.asignaciones.find((a) => a.id === vigente.reemplaza_a)?.usuarios.nombre}.</p>}
               </>
             ) : reg.estado === "nuevo" ? (

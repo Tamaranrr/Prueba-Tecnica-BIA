@@ -13,6 +13,7 @@ const RETENER = [
   { id: "pidio_no_insistir", nombre: "Pidieron no insistir" },
   { id: "base_sin_validar", nombre: "Base comprada sin validar" },
 ];
+const OLA_TEXTO = 6;   // igual a OLA_DEFECTO de src/lib/ia.ts (no se importa para no arrastrar el SDK al navegador)
 const PESOS = [
   { id: "segmento", nombre: "Segmento experto" }, { id: "zona", nombre: "Misma zona" },
   { id: "carga", nombre: "Carga baja" }, { id: "antiguedad", nombre: "Antigüedad" },
@@ -41,6 +42,8 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const [rampaPyme, setRampaPyme] = useState(PARAMETROS_DEFECTO.rampaSoloPyme);
   const [diasFrias, setDiasFrias] = useState(30);
   const [soloPleno, setSoloPleno] = useState(PARAMETROS_DEFECTO.soloPlenoParaGrandes);
+  const [todo, setTodo] = useState(false);                                         // la previsualización actual es de "Repartir todo"
+  const [progreso, setProgreso] = useState<{ hechos: number; total: number } | null>(null);
   const [prev, setPrev] = useState<Preview | null>(null);
   const [prevSol, setPrevSol] = useState<string | null>(null); // configuración exacta con la que se previsualizó
   const [cargando, setCargando] = useState(false);
@@ -53,8 +56,8 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const vendedoresConCarga = datos.usuarios.filter((u) => u.rol === "vendedor" && u.carga > 0);
   const frias = datos.usuarios.reduce((s, u) => s + u.perfil.frias, 0);
 
-  const solicitud = () => ({
-    metodo, fechaReferencia: fecha, ia: { limite: limiteIA },
+  const solicitud = (modoTodo: boolean = todo) => ({
+    metodo, fechaReferencia: fecha, ia: { limite: limiteIA, todo: modoTodo },
     alcance: alcance === "pendientes" ? { tipo: "pendientes" }
       : alcance === "seleccion" ? { tipo: "registros", ids: [...seleccion].sort((a, b) => a - b) }
       : alcance === "frias" ? { tipo: "frias", dias: diasFrias }
@@ -69,13 +72,41 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const desactualizada = prev !== null && prevSol !== JSON.stringify(solicitud());
 
   const previsualizar = async () => {
-    setCargando(true); setError(null); setAbiertos(new Set());
+    setCargando(true); setError(null); setAbiertos(new Set()); setTodo(false);
     try {
-      const sol = solicitud();
+      const sol = solicitud(false);
       const p = await api<Preview>("/api/preview", sol);
       setPrev(p); setPrevSol(JSON.stringify(sol));
     } catch (e) { setError((e as Error).message); setPrev(null); }
     setCargando(false);
+  };
+  /** "Repartir todo con IA": todos los asignables, sin tope, en olas paralelas y con el avance en vivo. */
+  const repartirTodo = async () => {
+    setCargando(true); setError(null); setAbiertos(new Set()); setPrev(null); setPrevSol(null); setTodo(true); setProgreso({ hechos: 0, total: 0 });
+    try {
+      const sol = solicitud(true);
+      const r = await fetch("/api/preview-todo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sol) });
+      if (!r.ok || !r.body) { const j = await r.json().catch(() => ({})); throw new Error(j.error ?? "Error inesperado"); }
+      const lector = r.body.getReader(), dec = new TextDecoder();
+      let buf = "", final: Preview | null = null;
+      for (;;) {
+        const { value, done } = await lector.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i: number;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const linea = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+          if (!linea) continue;
+          const ev = JSON.parse(linea);
+          if (ev.tipo === "progreso") setProgreso({ hechos: ev.hechos, total: ev.total });
+          else if (ev.tipo === "fin") final = ev.resultado as Preview;
+          else if (ev.tipo === "error") throw new Error(ev.mensaje);
+        }
+      }
+      if (!final) throw new Error("La respuesta se cortó antes de terminar. Vuelve a intentarlo.");
+      setPrev(final); setPrevSol(JSON.stringify(sol));
+    } catch (e) { setError((e as Error).message); setPrev(null); setPrevSol(null); }
+    setProgreso(null); setCargando(false);
   };
   const ejecutar = async () => {
     if (!prev || !actor || !prevSol || desactualizada) return;
@@ -179,14 +210,32 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
         </Tarjeta>
 
         <button className={`${boton("primario")} w-full`} disabled={cargando || !listoParaCorrer} onClick={previsualizar}>
-          {cargando ? (metodo === "ia" ? "Consultando a Claude… puede tardar" : "Calculando…") : "Previsualizar reparto"}
+          {cargando && !progreso ? (metodo === "ia" ? "Consultando a Claude… puede tardar" : "Calculando…") : "Previsualizar reparto"}
         </button>
+        {metodo === "ia" && alcance === "pendientes" && (
+          <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-slate-700">
+            <button className={`${boton("secundario")} w-full`} disabled={cargando} onClick={repartirTodo}>Repartir todo con IA ({pendientes.length} pendientes)</button>
+            <p className="mt-2 text-xs text-slate-600">Revisa y reparte todos los pendientes de una vez, por prioridad y sin tope de registros. Consulta al modelo de {OLA_TEXTO} en {OLA_TEXTO} y revalida cada decisión con las reglas duras. Dura cerca de un minuto y no guarda nada hasta que ejecutes.</p>
+          </div>
+        )}
       </div>
 
       <div className="min-w-0 space-y-4">
+        {progreso && (
+          <Tarjeta>
+            <Titulo>Repartiendo todo con IA</Titulo>
+            <p className="mb-2 text-sm text-slate-700" aria-live="polite">
+              {progreso.total === 0 ? "Revisando los pendientes y preparando las consultas…" : <><b>{progreso.hechos}</b> de <b>{progreso.total}</b> registros decididos</>}
+            </p>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-valuemin={0} aria-valuemax={progreso.total || 1} aria-valuenow={progreso.hechos}>
+              <div className="h-full rounded-full bg-brand-600 transition-all duration-300" style={{ width: `${progreso.total ? Math.round((progreso.hechos / progreso.total) * 100) : 4}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">Las decisiones se toman en olas de {OLA_TEXTO}: cada una se revalida con la carga y el tope de cuentas grandes antes de aceptarla.</p>
+          </Tarjeta>
+        )}
         {error && <p role="alert" className="rounded border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</p>}
 
-        {!prev && (
+        {!prev && !progreso && (
           <Tarjeta>
             <p className="mb-3 text-sm text-slate-600">Configura el reparto y pulsa <b>Previsualizar</b>. No se guarda nada hasta que lo ejecutes. Puedes filtrar la tabla y marcar solo los registros que quieras repartir.</p>
             {seleccion.size > 0 && alcance !== "seleccion" && (
@@ -204,7 +253,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
             <Tarjeta>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <Titulo>Previsualización (no guardada)</Titulo>
+                  <Titulo>Previsualización (no guardada){todo ? " · repartir todo con IA" : ""}</Titulo>
                   <p className="text-sm text-slate-700">
                     <b className="text-emerald-700">{prev.resumen.asignables}</b> se asignarían · <b className="text-amber-700">{prev.resumen.retenidos}</b> retenidos · <b className="text-red-700">{prev.resumen.sin_candidato}</b> sin candidato
                     {prev.sin_procesar ? <> · <b>{prev.sin_procesar}</b> quedan para la siguiente corrida</> : null}

@@ -11,6 +11,19 @@ export interface LecturaDeNotas {
 
 const CONCURRENCIA = 5;
 
+/** Solo lo que ya está en el caché, sin llamar al modelo ni escribir: para pantallas que no deben generar costo. */
+export async function leerSenalesEnCache(textos: (string | null | undefined)[]): Promise<Map<string, SenalesNota>> {
+  const distintos = [...new Set(textos.map((t) => t?.trim()).filter((t): t is string => !!t))];
+  const mapa = new Map<string, SenalesNota>();
+  if (!distintos.length) return mapa;
+  const { data, error } = await db().from("notas_senales").select("texto,senales,prompt_version").in("texto", distintos);
+  if (error) return mapa;
+  for (const f of (data ?? []) as unknown as { texto: string; senales: SenalesNota; prompt_version: string }[]) {
+    if (f.prompt_version === PROMPT_NOTAS_VERSION) mapa.set(f.texto, f.senales);
+  }
+  return mapa;
+}
+
 /**
  * Devuelve la lectura de cada texto de nota distinto. Primero busca en el caché (tabla notas_senales); solo
  * las notas que no están se mandan al modelo, y luego se guardan. Si algo falla (sin tabla, sin saldo, sin key),
