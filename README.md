@@ -120,7 +120,7 @@ El 88 % del texto exacto engaña: casi todo es "sin señal", y acierta cuando no
 
 ## Evaluación de la IA frente a los métodos
 
-Se midió con [scripts/evaluar-ia.mts](scripts/evaluar-ia.mts) sobre los mismos 61 registros asignables (modelo `claude-opus-5-5`, fecha de referencia 2026-10-16). Se hicieron dos rondas: el primer prompt y uno ajustado a partir de lo que mostró la primera.
+Se midió con [scripts/evaluar-ia.mts](scripts/evaluar-ia.mts) sobre los mismos 61 registros asignables (fecha de referencia 2026-10-16). Se hicieron tres rondas: las dos primeras con `claude-opus-5-5` y distinto prompt, y una tercera con las señales de las notas y tres modelos.
 
 | Método | Con experto de su segmento | En su zona | Grandes con experto corporativo | Ocupación máxima | Desviación de ocupación |
 |---|---|---|---|---|---|
@@ -138,10 +138,14 @@ Se midió con [scripts/evaluar-ia.mts](scripts/evaluar-ia.mts) sobre los mismos 
 - **Con la misma política, la IA y las reglas llegan casi al mismo lugar.** Segmento 79 % contra 80 %, zona 67 % contra 70 %, y un desbalance algo menor en la IA (10,9 contra 11,7 puntos). Eligen al mismo vendedor en 39 de 61 casos (64 %); en los 22 distintos, la IA acierta el segmento y reglas no en 2 casos, y reglas acierta y la IA no en 3. Son empates razonables, como una cuenta industrial en Centro que la IA da a la experta corporativa de Centro y las reglas al experto industrial de Antioquia.
 - **La IA no rompió ninguna regla dura** en las dos rondas: 0 respaldos y 0 cuentas grandes a vendedores con menos de 90 días. Era de esperar: solo ve candidatos que ya pasaron los filtros.
 - **La IA sigue la política que se le escribe.** Lo que cambió entre v1 y v2 fue el prompt, no el modelo. La política debe definirla negocio, no el modelo.
-- **Lo que aporta frente a las reglas** es la explicación en lenguaje natural de cada decisión y la lectura de notas que las reglas no entienden. Con estos datos, las notas con una señal accionable son raras (1 caso de "senior" y 1 de "conoce el sector" entre 61; ambos bien resueltos en las dos rondas), así que esa ventaja no se pudo medir.
+- **Lo que aporta frente a las reglas** es la explicación en lenguaje natural de cada decisión y la lectura de notas que las reglas no entienden. En las dos primeras rondas esa ventaja no se pudo medir: el código solo entendía dos frases exactas (1 caso de "senior" y 1 de "conoce el sector" entre 61, bien resueltos). Eso llevó a leer las notas con IA, ver [Lectura de las notas con IA](#lectura-de-las-notas-con-ia) y la ronda 3.
 - **Costo y velocidad:** unos 4,3 s y US$0,012 por registro (61 registros: 4,4 min y US$0,71), secuencial, por eso tiene tope por corrida. Las reglas son instantáneas y gratis. La recomendación es usar *reglas* para el reparto masivo y la IA para los casos con notas ambiguas o cuando se quiera una justificación escrita.
 - **Estabilidad (prompt v1):** al repetir 20 registros eligió al mismo vendedor las 20 veces. No se repitió con v2.
-- **Ronda 3: prompt v3 con las señales de las notas, y tres modelos para decidir.** Las notas se leyeron igual para todos. Una corrida por modelo sobre los mismos 61 registros:
+- **Salvedades:** no hay una asignación "correcta" de referencia, así que las métricas son aproximaciones de lo que negocio dijo querer (experto, zona, balance). Es un solo lote de 61 registros y una sola corrida por prompt.
+
+### Ronda 3
+
+**Ronda 3: prompt v3 con las señales de las notas y tres modelos para decidir.** Las notas se leyeron para todos con el mismo modelo, sin caché en esta corrida. Una corrida por modelo sobre los mismos 61 registros:
 
 | Modelo que decide | Con experto de su segmento | En su zona | Ocupación máxima | Desbalance | Mismo vendedor que reglas | Por registro | Costo de los 61 |
 |---|---|---|---|---|---|---|---|
@@ -151,7 +155,6 @@ Se midió con [scripts/evaluar-ia.mts](scripts/evaluar-ia.mts) sobre los mismos 
 | **Haiku 5.5 (por defecto)** | 80 % | 62 % | 45 % | 11,4 pts | 57 % | 4,3 s | **US$0,03** |
 
 Ningún modelo domina: las diferencias entre ellos son del tamaño de lo que el mismo Opus movió entre el prompt v1 y el v2. Como en todas las rondas, ninguno rompió una regla dura. Haiku decide al nivel de los otros por **29 veces menos que Opus**, por eso es el modelo por defecto; se cambia con la variable `ANTHROPIC_MODEL`. No se midió la variación entre corridas del mismo modelo en esta ronda, así que no se puede afirmar que Sonnet sea mejor en segmento ni Opus mejor en balance.
-- **Salvedades:** no hay una asignación "correcta" de referencia, así que las métricas son aproximaciones de lo que negocio dijo querer (experto, zona, balance). Es un solo lote de 61 registros y una sola corrida por prompt.
 
 ## Cómo correrlo
 
@@ -169,7 +172,8 @@ ANTHROPIC_API_KEY=
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co   # sin /rest/v1/
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=                            # solo servidor
-# ANTHROPIC_MODEL=claude-opus-5-5                     # opcional
+# ANTHROPIC_MODEL=claude-haiku-5-5                    # opcional: modelo que decide (por defecto Haiku 5.5)
+# ANTHROPIC_MODEL_NOTAS=claude-haiku-5-5              # opcional: modelo que lee las notas
 ```
 
 1. En Supabase → **SQL Editor**, ejecutar [supabase/schema.sql](supabase/schema.sql) (crea las tablas, incluida la caché de lectura de notas; borra las existentes). Si la base ya existe y solo falta la caché, basta con ejecutar el último bloque del archivo (`notas_senales`), que no borra nada.
@@ -196,17 +200,20 @@ Todas devuelven JSON; los errores de negocio responden 400 con un mensaje legibl
 | Ruta | Para qué |
 |---|---|
 | `GET /api/datos?fecha=` | Registros, equipo, carga y ausencias para la consola |
-| `POST /api/preview` | Simula un reparto sin guardar. Método `ia` guarda la previsualización y devuelve `preview_id` |
+| `POST /api/preview` | Simula un reparto sin guardar. Devuelve avisos (por ejemplo, si no se pudieron leer las notas). Método `ia` guarda la previsualización y devuelve `preview_id` |
 | `POST /api/ejecutar` | Ejecuta y escribe la traza. Requiere `ejecutado_por` (admin o líder activo). Con IA, requiere `preview_id` |
 | `POST /api/reasignar` | Reasignación manual de un registro, con motivo obligatorio |
 | `GET /api/registros/:id` | Datos, actividad y cadena completa de asignaciones |
 | `GET /api/ejecuciones` | Historial de ejecuciones |
+| `GET /api/ejecuciones/:id` | Qué asignó exactamente una ejecución, registro por registro |
 
 ## Estructura
 
 ```
 src/lib/engine/   motor puro: tipos, filtros duros, carga, segmento, métodos, orquestación
-src/lib/ia.ts     prompt, llamada a Claude con salida estructurada, validación y respaldo
+src/lib/ia.ts     decisión por IA: prompt, llamada a Claude con salida estructurada, validación y respaldo
+src/lib/notas.ts  lectura de notas: señales estructuradas con Claude
+src/lib/notasServicio.ts  caché de la lectura de notas (tabla notas_senales)
 src/lib/servicio.ts  lote, previsualizar, ejecutar, reasignar y escritura de la traza
 src/app/api/      rutas
 src/app/consola/  interfaz
@@ -221,22 +228,28 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 - **Umbrales y pesos están medidos sobre estos datos, pero no validados con negocio.** El corte entre cuenta grande y mediana sale de un hueco real en los datos; los pesos son una política (experto, zona o balance) que negocio debe elegir. Por eso la consola trae perfiles.
 - **El segmento industrial se deduce solo del sector** (no hay otro dato) y no está respaldado por el historial: ahí no se vio relación entre sector y experto del dueño.
 - **La IA se evaluó contra los métodos, pero sin una verdad de referencia**: se mide contra lo que negocio dijo querer. Ver la sección de evaluación.
+- **Las etiquetas con las que se midió la lectura de notas** (`tests/etiquetas-notas.json`) son criterio de quien armó la prueba y deberían validarse con negocio. Son 25 notas: sirven para comparar modelos, no para garantizar una exactitud en producción.
+- **No se aprovecha el historial de la cuenta.** Un registro nuevo cuyo duplicado ya trabaja alguien se retiene para revisión; lo natural sería ofrecérselo a esa misma persona.
 - **Datos personales en el prompt**: se guarda el prompt completo porque negocio lo pidió; en producción habría que fijar retención y control de acceso a esa tabla.
 
 ---
 
 ## Uso de IA en el desarrollo
 
-Trabajé con Claude Code como entorno principal, con este método: **primero el plan y recién después el código**, una decisión mía por cada ambigüedad de los datos, y verificación de cada paso (pruebas, llamadas reales a la API y recorrido de la consola en el navegador) antes de avanzar. La IA propuso; yo decidí, cuestioné y fijé el orden.
+Trabajé con Claude Code como entorno principal y con un método: **primero el plan y recién después el código**, una decisión mía por cada ambigüedad de los datos, y verificación de cada paso (pruebas, llamadas reales a la API y recorrido de la consola en el navegador) antes de avanzar. La IA propuso; yo decidí, cuestioné y fijé el orden.
 
-Estos son mis mensajes, **tal cual** los escribí, en los momentos donde mi decisión cambió el rumbo:
+Estos son dos de mis prompts, **tal cual** los escribí (con mis errores de tipeo), de los momentos en que más me sirvieron:
 
-| Momento | Mi mensaje | Qué cambió en el proyecto |
-|---|---|---|
-| Antes de escribir una línea | *"vamos primero a mapear que es lo que vamos a hacer , como lo vamos a  hacer y como funcionara. Despues de tener un plan hecho miramos si codificamos"* | Se analizaron los CSV antes de diseñar. Ahí apareció que no existía una columna de dueño del registro, así que la carga se calcula desde la actividad. |
-| Datos sucios | *"(Me gusta hazlo asi)"* sobre normalizar al cargar y marcar con banderas en lugar de borrar | Nada se descarta en silencio: cada ajuste queda como bandera y la fila original se conserva. |
-| Zona Bogotá | *"(Si, seria lo logico)"* | Bogotá se trata como Centro y queda documentado en Supuestos. |
-| No aceptar lo que no entiendo | *"¿Qué cuenta como carga de un vendedor? ... (Explicame bien esto )"* | Pedí la explicación con datos reales antes de aprobar la definición de carga, que es la base de los tres métodos. |
-| Cuestionar una dependencia | *"Es necesaria una api key de claude?"* | Quedó claro que solo el método de IA la necesita; el resto del motor funciona sin ella. |
-| Corregir un paso de la integración | *"Igualmente hice la integracion con supabase en optional integrations, le doy a deploy?"* | La integración habría creado una base de datos nueva y vacía; se quitó antes de desplegar. |
-| Prioridades | *"Primero configuremos Git y subamos al repositorio."* · *"Primero hagamos la consola web."* · *"Primero desplegamos en Vercel; guíame."* | Orden de trabajo: código versionado desde temprano, consola antes del método de IA, y despliegue verificado antes de redactar la documentación. |
+**1. Auditar el producto contra el enunciado y probar el front**
+
+> Despues revisamos los prompts, en este momento quiero revisar que cumplimos correctamente con las solicitudes de la prueba tecnica punto por punto. Y verificar  que el front este funcionando , ya que esta simple y sin diseño, los filtros no funcionan correctamente , asignaciones y demas.
+>
+> Asi que empezemos por ahii y despues revisamos el readme
+
+*Por qué sirvió:* en vez de dar el trabajo por terminado, pedí comprobarlo contra el enunciado. Salieron, entre otras cosas, que el repositorio estaba público cuando la prueba pide privado, que "Ejecutar" podía aplicar una configuración distinta de la previsualizada, que los filtros no permitían repartir lo filtrado, que un duplicado ya trabajado se asignaba a ciegas y que un filtro por dueño mostraba registros descartados. Todo se corrigió y quedó con pruebas.
+
+**2. Cuestionar si la IA realmente aportaba**
+
+> Volvamos a revisar la prueba , es esta : *(aquí pegué el enunciado completo)* Verifiquemos el  uso de la ia, cuando nos aporta y como podriamos mejorarlo?
+
+*Por qué sirvió:* la primera evaluación mostró que la IA igualaba a las reglas pero no las superaba. Al preguntar cuándo aporta, se vio que 60 de los 71 pendientes traen una nota en texto libre con información útil y que el código solo entendía 2 frases exactas. De ahí salió la lectura de notas con IA (señales estructuradas con caché), su evaluación con etiquetas y la prueba de un modelo más barato (Haiku 5.5 cuesta unas 28 veces menos que Opus con una calidad comparable). Ver [Lectura de las notas con IA](#lectura-de-las-notas-con-ia).
