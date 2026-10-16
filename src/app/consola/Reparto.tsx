@@ -124,7 +124,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const cambioPorUsuario = prev ? datos.usuarios.filter((u) => u.rol !== "admin" && (prev.cargaFinal[u.id] ?? 0) !== (prev.cargaInicial[u.id] ?? 0)) : [];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[22rem_1fr]">
+    <div className="grid items-start gap-5 xl:grid-cols-[21rem_1fr]">
       <div className="min-w-0 space-y-4">
         <Tarjeta>
           <Titulo>1 · Qué repartir</Titulo>
@@ -149,7 +149,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
           <Titulo>2 · Método</Titulo>
           <div className="space-y-2">
             {METODOS.map((m) => (
-              <label key={m.id} className={`block cursor-pointer rounded border p-2.5 text-sm ${metodo === m.id ? "border-indigo-600 bg-indigo-50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label key={m.id} className={`block cursor-pointer rounded-lg border p-3 text-sm ${metodo === m.id ? "border-brand-600 bg-brand-50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" className="mr-2" checked={metodo === m.id} onChange={() => elegirMetodo(m.id)} /><b>{m.nombre}</b>
                 <p className="mt-1 text-xs text-slate-600">{m.desc}</p>
               </label>
@@ -164,7 +164,9 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
         </Tarjeta>
 
         <Tarjeta>
-          <Titulo>3 · Parámetros</Titulo>
+          <details>
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-slate-500">3 · Parámetros <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">(zona, ausencias, notas, retenciones)</span></summary>
+          <div className="mt-3">
           <label className="mb-2 block text-sm text-slate-700">Zona
             <select className={`${campo} mt-1 w-full`} value={zona} onChange={(e) => setZona(e.target.value as typeof zona)}>
               <option value="estricta">Estricta: solo vendedores de la zona</option>
@@ -207,8 +209,11 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                 <input type="number" min={0} className={`${campo} w-20`} value={pesos.diasMinCorporativo} onChange={(e) => setPesos({ ...pesos, diasMinCorporativo: Number(e.target.value) })} /></label>
             </div>
           )}
+          </div>
+          </details>
         </Tarjeta>
 
+        <div className="sticky bottom-3 z-10 space-y-3 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
         <button className={`${boton("primario")} w-full`} disabled={cargando || !listoParaCorrer} onClick={previsualizar}>
           {cargando && !progreso ? (metodo === "ia" ? "Consultando a Claude… puede tardar" : "Calculando…") : "Previsualizar reparto"}
         </button>
@@ -218,6 +223,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
             <p className="mt-2 text-xs text-slate-600">Revisa y reparte todos los pendientes de una vez, por prioridad y sin tope de registros. Consulta al modelo de {OLA_TEXTO} en {OLA_TEXTO} y revalida cada decisión con las reglas duras. Dura cerca de un minuto y no guarda nada hasta que ejecutes.</p>
           </div>
         )}
+        </div>
       </div>
 
       <div className="min-w-0 space-y-4">
@@ -239,7 +245,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
           <Tarjeta>
             <p className="mb-3 text-sm text-slate-600">Configura el reparto y pulsa <b>Previsualizar</b>. No se guarda nada hasta que lo ejecutes. Puedes filtrar la tabla y marcar solo los registros que quieras repartir.</p>
             {seleccion.size > 0 && alcance !== "seleccion" && (
-              <p className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+              <p className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-800">
                 Tienes {seleccion.size} registros seleccionados.
                 <button className={boton("primario")} onClick={() => setAlcance("seleccion")}>Repartir solo estos</button>
               </p>
@@ -306,7 +312,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                                 <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">Lectura de la nota: <LecturaNota senales={p.senales} /><span className="italic">{p.senales.razon}</span></p>
                               )}
                               {p.prompt_enviado && (
-                                <details className="mb-2 text-xs"><summary className="cursor-pointer text-indigo-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
+                                <details className="mb-2 text-xs"><summary className="cursor-pointer text-brand-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
                                   <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.prompt_enviado}</pre>
                                   <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre></details>
                               )}

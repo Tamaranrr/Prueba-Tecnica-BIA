@@ -71,7 +71,7 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
         {error && <p className="text-red-700">{error}</p>}
         {!traza && !error && <p className="text-sm text-slate-500">Cargando…</p>}
         {traza && (
-          <div className="rounded border border-indigo-200 bg-indigo-50 p-4 text-sm text-slate-800">
+          <div className="rounded border border-brand-200 bg-brand-50 p-4 text-sm text-slate-800">
             {vigente ? (
               <>
                 <p><b>{vigente.usuarios.nombre}</b> lo tiene por una {vigente.ejecuciones.tipo === "reasignacion" ? "reasignación" : "asignación"} del {fmtFecha(vigente.creada_en)}, ejecutada por <b>{vigente.ejecutado_por}</b> con el método <b>{vigente.metodo}</b>.</p>
@@ -143,7 +143,7 @@ function Asignacion({ a }: { a: AsignacionTraza }) {
       </div>
       <p className="mt-1 text-xs text-slate-500">Ejecutó {a.ejecutado_por}</p>
       <p className="mt-1 text-slate-700">{a.motivo}</p>
-      <button className="mt-2 text-xs text-indigo-700 hover:underline" onClick={() => setAbierto(!abierto)}>{abierto ? "Ocultar" : "Ver"} candidatos y parámetros</button>
+      <button className="mt-2 text-xs text-brand-700 hover:underline" onClick={() => setAbierto(!abierto)}>{abierto ? "Ocultar" : "Ver"} candidatos y parámetros</button>
       {abierto && (
         <div className="mt-2 space-y-2">
           <TablaCandidatos candidatos={a.candidatos ?? []} elegidoId={a.usuarios.id} />

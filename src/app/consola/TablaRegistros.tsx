@@ -4,7 +4,9 @@ import { useMemo, useState, type ReactNode } from "react";
 import { fmtMoneda, type Datos, type RegistroConsola } from "@/lib/cliente";
 import { diasEntre } from "@/lib/engine/filtros";
 import { esVivo } from "@/lib/engine/tipos";
-import { Badge, Banderas, boton, campo } from "./ui";
+import { Avatar, Badge, Banderas, boton, campo } from "./ui";
+
+const TONO_SEGMENTO: Record<string, "marca" | "azul" | "gris"> = { corporativo: "marca", industrial: "azul", pyme: "gris" };
 
 // autoasignado (lo asignó el motor) va en azul; nuevo pasa a ámbar para no confundirse con él.
 const TONO_ESTADO = { nuevo: "ambar", autoasignado: "azul", asignado: "violeta", en_gestion: "verde", descartado: "gris" } as const;
@@ -38,6 +40,7 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
   soloEjecucion?: string | null;
 }) {
   const [f, setF] = useState<Filtros>(VACIOS);
+  const [masFiltros, setMasFiltros] = useState(false);
   // En la lista de pendientes manda la prioridad de reparto; en Registros, quien más lleva esperando.
   const [orden, setOrden] = useState<{ clave: Clave; asc: boolean }>(estadoFijo ? { clave: "prioridad", asc: true } : { clave: "espera", asc: false });
   const nombre = (id: number | null) => datos.usuarios.find((u) => u.id === id)?.nombre ?? "sin dato";
@@ -92,19 +95,24 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
 
   return (
     <div>
-      <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <input aria-label="Buscar" className={`${campo} sm:col-span-2`} placeholder="Buscar por empresa, NIT, ciudad, sector o nota" value={f.q} onChange={(e) => set("q")(e.target.value)} />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input aria-label="Buscar" className={`${campo} min-w-64 flex-1`} placeholder="Buscar por empresa, NIT, ciudad, sector o nota" value={f.q} onChange={(e) => set("q")(e.target.value)} />
         {!estadoFijo && (
           <select aria-label="Estado" className={campo} value={f.estado} onChange={(e) => set("estado")(e.target.value)}>
             <option value="">Todos los estados</option>{["nuevo", "autoasignado", "asignado", "en_gestion", "descartado"].map((e) => <option key={e} value={e}>{e.replace("_", " ")}</option>)}
           </select>
         )}
-        <select aria-label="Zona" className={campo} value={f.zona} onChange={(e) => set("zona")(e.target.value)}>
-          <option value="">Todas las zonas</option>{["Centro", "Costa", "Occidente", "Antioquia"].map((z) => <option key={z}>{z}</option>)}
-        </select>
         <select aria-label="Segmento" className={campo} value={f.segmento} onChange={(e) => set("segmento")(e.target.value)}>
           <option value="">Todos los segmentos</option>{["corporativo", "industrial", "pyme"].map((z) => <option key={z}>{z}</option>)}
         </select>
+        <select aria-label="Zona" className={campo} value={f.zona} onChange={(e) => set("zona")(e.target.value)}>
+          <option value="">Todas las zonas</option>{["Centro", "Costa", "Occidente", "Antioquia"].map((z) => <option key={z}>{z}</option>)}
+        </select>
+        <button type="button" className={boton(masFiltros || f.fuente || f.dueno || f.alerta || f.espera ? "primario" : "secundario")} aria-expanded={masFiltros} onClick={() => setMasFiltros((x) => !x)}>
+          Más filtros{[f.fuente, f.dueno, f.alerta, f.espera].filter(Boolean).length > 0 ? ` (${[f.fuente, f.dueno, f.alerta, f.espera].filter(Boolean).length})` : ""}
+        </button>
+      </div>
+      <div className={`mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 ${masFiltros ? "" : "hidden"}`}>
         <select aria-label="Fuente" className={campo} value={f.fuente} onChange={(e) => set("fuente")(e.target.value)}>
           <option value="">Todas las fuentes</option>{fuentes.map((z) => <option key={z}>{z}</option>)}
         </select>
@@ -125,7 +133,7 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
         <span>
           <b className="text-slate-900">{filas.length}</b> de {base.length} registros
-          {marcadosAqui > 0 && <> · <b className="text-indigo-700">{marcadosAqui}</b> seleccionados</>}
+          {marcadosAqui > 0 && <> · <b className="text-brand-700">{marcadosAqui}</b> seleccionados</>}
           {seleccion.size > marcadosAqui && <span className="text-slate-500"> ({seleccion.size - marcadosAqui} más fuera de este filtro)</span>}
         </span>
         <span className="flex flex-wrap gap-2">
@@ -135,9 +143,9 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
         </span>
       </div>
 
-      <div className="overflow-auto rounded-lg border border-slate-200" style={{ maxHeight: alto }}>
+      <div className="overflow-auto rounded-xl border border-slate-200" style={{ maxHeight: alto }}>
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="w-10 px-3 py-2"><input type="checkbox" aria-label="Seleccionar todos los filtrados" checked={todos} onChange={alternarTodos} /></th>
               {COLUMNAS.map((c) => (
@@ -158,16 +166,19 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
               const a = r.asignacion;
               const reciente = !!a && a.ejecucion_id === ultima;
               return (
-                <tr key={r.id} className={`border-t border-slate-100 align-top hover:bg-indigo-50/40 ${seleccion.has(r.id) ? "bg-indigo-50/60" : reciente ? "bg-blue-50/50" : ""}`}>
+                <tr key={r.id} className={`border-t border-slate-100 align-middle hover:bg-brand-50/50 ${seleccion.has(r.id) ? "bg-brand-50" : reciente ? "bg-blue-50/50" : ""}`}>
                   <td className="px-3 py-2"><input type="checkbox" aria-label={`Seleccionar ${r.razon_social}`} checked={seleccion.has(r.id)} onChange={() => alternar(r.id)} /></td>
                   {estadoFijo && (
                     <td className="px-3 py-2 tabular-nums" title={r.prioridad?.razon}>
                       {r.prioridad ? <b className="text-slate-900">#{r.prioridad.posicion}</b> : <Badge tono="ambar" titulo={r.retenido?.join(", ")}>retenido</Badge>}
                     </td>
                   )}
-                  <td className="cursor-pointer px-3 py-2 font-medium text-slate-900 hover:underline" onClick={() => abrir(r.id)}>{r.razon_social}</td>
-                  <td className="px-3 py-2">{r.zona ?? "sin dato"}</td>
-                  <td className="px-3 py-2">{r.segmento}</td>
+                  <td className="min-w-56 cursor-pointer px-3 py-3" onClick={() => abrir(r.id)}>
+                    <p className="font-medium text-slate-900 hover:text-brand-700 hover:underline">{r.razon_social}</p>
+                    <p className="text-xs text-slate-500">{r.sector ?? "sin sector"} · {r.ciudad}</p>
+                  </td>
+                  <td className="px-3 py-2 text-slate-700">{r.zona ?? <span className="text-slate-400">sin dato</span>}</td>
+                  <td className="px-3 py-2"><Badge tono={TONO_SEGMENTO[r.segmento] ?? "gris"}>{r.segmento}</Badge></td>
                   <td className="px-3 py-2 text-right tabular-nums">{fmtMoneda(r.ingresos_estimados)}</td>
                   {estadoFijo
                     ? <td className="px-3 py-2 text-right tabular-nums">{espera === null ? "" : <span className={espera >= 14 ? "font-semibold text-rose-700" : espera >= 7 ? "font-medium text-amber-700" : ""}>{espera} d</span>}</td>
@@ -180,8 +191,13 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
                         <td className="min-w-[13rem] px-3 py-2">
                           {a ? (
                             <>
-                              <div className="font-medium text-slate-900">{nombre(a.usuario_id)}</div>
-                              <div className="text-xs text-slate-500">por {soloNombre(a.por)} · {METODO[a.metodo] ?? a.metodo} · {fechaHora(a.cuando)}</div>
+                              <div className="flex items-center gap-2">
+                                <Avatar nombre={nombre(a.usuario_id)} tam={28} />
+                                <div>
+                                  <div className="font-medium text-slate-900">{nombre(a.usuario_id)}</div>
+                                  <div className="text-xs text-slate-500">por {soloNombre(a.por)} · {METODO[a.metodo] ?? a.metodo} · {fechaHora(a.cuando)}</div>
+                                </div>
+                              </div>
                             </>
                           ) : r.estado === "nuevo"
                             ? <span className="text-slate-400">sin asignar</span>
@@ -204,7 +220,7 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
               );
             })}
             {filas.length === 0 && (
-              <tr><td colSpan={columnas} className="px-3 py-10 text-center text-slate-500">Ningún registro cumple estos filtros.{activos > 0 && <> <button className="text-indigo-700 underline" onClick={() => setF(VACIOS)}>Limpiar filtros</button></>}</td></tr>
+              <tr><td colSpan={columnas} className="px-3 py-10 text-center text-slate-500">Ningún registro cumple estos filtros.{activos > 0 && <> <button className="text-brand-700 underline" onClick={() => setF(VACIOS)}>Limpiar filtros</button></>}</td></tr>
             )}
           </tbody>
         </table>
