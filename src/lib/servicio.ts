@@ -3,6 +3,8 @@ import { calcularCarga, duenosActuales } from "./engine/carga";
 import { evaluarCandidato } from "./engine/filtros";
 import { marcarDuplicadosEnTrabajo } from "./engine/duplicados";
 import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
+import { leerSenales } from "./notasServicio";
+import type { SenalesNota } from "./notas";
 import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, PROMPT_VERSION, proponerIA } from "./ia";
 import type {
   Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, ResultadoMotor, Usuario,
@@ -50,7 +52,7 @@ export async function leerTodo() {
 type Base = Awaited<ReturnType<typeof leerTodo>>;
 
 /** Arma el lote, la carga y los parámetros efectivos. No corre ningún método ni escribe nada. */
-export function armarLote(base: Base, sol: Solicitud) {
+export function armarLote(base: Base, sol: Solicitud, senales?: Map<string, SenalesNota>) {
   const fecha = sol.fechaReferencia ?? hoy();
   const duenos = duenosActuales(base.actividad, base.vigentes);
   let lote: Registro[];
@@ -75,6 +77,8 @@ export function armarLote(base: Base, sol: Solicitud) {
   }
 
   lote = marcarDuplicadosEnTrabajo(lote, base.registros);
+  // Lectura de las notas hecha por IA (si se pidió): se adjunta a cada registro como un dato más para el motor.
+  if (senales && extra.usarNotasIA !== false) lote = lote.map((r) => { const x = r.notas ? senales.get(r.notas.trim()) : undefined; return x ? { ...r, senales: x } : r; });
   // Es reasignación solo si algún registro del lote ya tenía trabajo encima; repartir "nuevos" elegidos a mano no lo es.
   const reasigna = lote.some((r) => r.estado !== "nuevo");
 
@@ -87,18 +91,27 @@ export function armarLote(base: Base, sol: Solicitud) {
 }
 
 /** Método determinista sobre el lote armado. */
-export function planificar(base: Base, sol: Solicitud) {
+export function planificar(base: Base, sol: Solicitud, senales?: Map<string, SenalesNota>) {
   if (sol.metodo === "ia") throw new ErrorNegocio("El método de IA se previsualiza con previsualizar() y se ejecuta con su preview_id.");
-  const l = armarLote(base, sol);
+  const l = armarLote(base, sol, senales);
   return { ...l, resultado: proponer(sol.metodo, l.datos, l.params) };
+}
+
+/** Lee (o toma del caché) las notas del lote. Nunca detiene el reparto: si falla, devuelve avisos. */
+export async function leerNotasDelLote(base: Base, sol: Solicitud) {
+  if (sol.parametros?.usarNotasIA === false) return { senales: undefined, avisos: [] as string[], distintas: 0, nuevas: 0 };
+  const { datos } = armarLote(base, sol);
+  const r = await leerSenales(datos.registros.map((x) => x.notas));
+  return { senales: r.mapa, avisos: r.avisos, distintas: r.distintas, nuevas: r.nuevas };
 }
 
 export async function previsualizar(sol: Solicitud) {
   const base = await leerTodo();
+  const lectura = await leerNotasDelLote(base, sol);
   let resultado: ResultadoMotor;
   let sin_procesar = 0;
   let preview_id: string | undefined;
-  const { cargaInicial, duenos, datos, params } = armarLote(base, sol);
+  const { cargaInicial, duenos, datos, params } = armarLote(base, sol, lectura.senales);
   if (sol.metodo === "ia") {
     const limite = Math.min(Math.max(Math.trunc(sol.ia?.limite ?? LIMITE_IA_DEFECTO), 1), LIMITE_IA_MAXIMO);
     const r = await proponerIA(datos, params, limite);
@@ -110,6 +123,7 @@ export async function previsualizar(sol: Solicitud) {
   }
   return {
     ...resultado, cargaInicial, preview_id, sin_procesar,
+    avisos: lectura.avisos, notas: { distintas: lectura.distintas, nuevas: lectura.nuevas },
     propuestas: resultado.propuestas.map((p) => ({ ...p, dueno_actual: duenos.get(p.registro_id) ?? null })),
     resumen: {
       asignables: resultado.propuestas.filter((p) => p.usuario_id !== null).length,
@@ -131,7 +145,7 @@ export async function resolverActor(actorId: unknown): Promise<string> {
 
 interface FilaNueva {
   registro_id: number; usuario_id: number; motivo: string; candidatos: EvaluacionCandidato[];
-  banderas_decision?: string[]; dueno_anterior?: number | null;
+  banderas_decision?: string[]; dueno_anterior?: number | null; senales?: SenalesNota;
   prompt_enviado?: string; respuesta_modelo?: string; modelo?: string;
 }
 
@@ -165,7 +179,7 @@ export async function persistir(
     }
     const rows = filas.map((f) => ({
       ejecucion_id: ej.id, registro_id: f.registro_id, usuario_id: f.usuario_id, metodo: meta.metodo,
-      parametros: { ...(meta.parametros as object), dueno_anterior_usuario_id: f.dueno_anterior ?? null, banderas_decision: f.banderas_decision ?? [] },
+      parametros: { ...(meta.parametros as object), dueno_anterior_usuario_id: f.dueno_anterior ?? null, banderas_decision: f.banderas_decision ?? [], senales_nota: f.senales ?? null },
       ejecutado_por: meta.actor, reemplaza_a: previas.get(f.registro_id)?.id ?? null, vigente: true,
       motivo: f.motivo, candidatos: f.candidatos, prompt_enviado: f.prompt_enviado ?? null,
       respuesta_modelo: f.respuesta_modelo ?? null, modelo: f.modelo ?? null,
@@ -198,7 +212,8 @@ export async function ejecutar(sol: Solicitud, actorId: unknown, previewId?: unk
   let meta: Parameters<typeof persistir>[0];
   let sinCandidato: number;
   let retenidos: ResultadoMotor["retenidos"];
-  const l = armarLote(base, sol);
+  const lectura = await leerNotasDelLote(base, sol);
+  const l = armarLote(base, sol, lectura.senales);
 
   if (sol.metodo === "ia") {
     // El modelo no es determinista: se ejecuta lo previsualizado (con su prompt y respuesta), no una consulta nueva.
@@ -219,17 +234,17 @@ export async function ejecutar(sol: Solicitud, actorId: unknown, previewId?: unk
     }
     filas = validas.map((p) => ({
       registro_id: p.registro_id, usuario_id: p.usuario_id!, motivo: p.motivo, candidatos: p.candidatos,
-      banderas_decision: p.banderas_decision, dueno_anterior: l.duenos.get(p.registro_id) ?? null,
+      banderas_decision: p.banderas_decision, dueno_anterior: l.duenos.get(p.registro_id) ?? null, senales: p.senales,
       prompt_enviado: p.prompt_enviado, respuesta_modelo: p.respuesta_modelo, modelo: p.modelo,
     }));
     sinCandidato = prev.resultado.propuestas.length - filas.length;
     retenidos = prev.resultado.retenidos;
     meta = { tipo: l.tipo, metodo: "ia", parametros: { ...prev.resultado.parametros, ia: { modelo: MODELO_IA, prompt: PROMPT_VERSION, limite: sol.ia?.limite ?? LIMITE_IA_DEFECTO, preview_id: previewId } }, actor, fecha: prev.resultado.parametros.fechaReferencia };
   } else {
-    const { resultado } = planificar(base, sol);
+    const { resultado } = planificar(base, sol, lectura.senales);
     filas = resultado.propuestas.filter((p) => p.usuario_id !== null).map((p) => ({
       registro_id: p.registro_id, usuario_id: p.usuario_id!, motivo: p.motivo, candidatos: p.candidatos,
-      banderas_decision: p.banderas_decision, dueno_anterior: l.duenos.get(p.registro_id) ?? null,
+      banderas_decision: p.banderas_decision, dueno_anterior: l.duenos.get(p.registro_id) ?? null, senales: p.senales,
     }));
     sinCandidato = resultado.propuestas.length - filas.length;
     retenidos = resultado.retenidos;

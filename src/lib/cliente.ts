@@ -11,6 +11,7 @@ export interface Preview {
   cargaInicial: Record<number, number>; cargaFinal: Record<number, number>;
   resumen: { asignables: number; sin_candidato: number; retenidos: number };
   preview_id?: string; sin_procesar?: number;
+  avisos?: string[]; notas?: { distintas: number; nuevas: number };
 }
 export interface Ejecucion {
   id: string; tipo: string; metodo: string; parametros: ParametrosMotor; ejecutado_por: string;

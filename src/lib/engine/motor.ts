@@ -23,6 +23,7 @@ export function razonesRetencion(r: Registro, params: ParametrosMotor): string[]
   const out: string[] = [];
   if (!params.estados.includes(r.estado)) out.push(`estado_${r.estado}`);
   if (r.duplicado_de !== null && params.retener.includes("duplicado")) out.push(`duplicado_de_${r.duplicado_de}`);
+  if (params.usarNotasIA && r.senales?.no_contactar && params.retener.includes("pidio_no_insistir") && !r.banderas.includes("pidio_no_insistir")) out.push("nota_no_contactar");
   for (const b of r.banderas) {
     if (b.startsWith("duplicado_en_")) { if (params.retener.includes("duplicado")) out.push(b); }
     else if (b !== "posible_duplicado" && params.retener.includes(b)) out.push(b);
@@ -56,8 +57,10 @@ export function prepararLote(metodo: Metodo, d: DatosMotor, params: ParametrosMo
     else porAsignar.push(r);
   }
   // FIFO (el que más lleva esperando primero); en reglas las cuentas grandes van antes.
+  // Con la lectura de notas, lo urgente se atiende primero: quien llega antes elige mejor y no queda esperando.
+  const rango = (r: Registro) => (params.usarNotasIA ? ({ alta: 0, normal: 1, baja: 2 }[r.senales?.urgencia ?? "normal"]) : 1);
   porAsignar.sort((a, b) =>
-    (metodo === "reglas" ? tamano(b) - tamano(a) : 0) || a.fecha_creacion.localeCompare(b.fecha_creacion) || a.id - b.id);
+    rango(a) - rango(b) || (metodo === "reglas" ? tamano(b) - tamano(a) : 0) || a.fecha_creacion.localeCompare(b.fecha_creacion) || a.id - b.id);
   return { carga, usuarios, ctx, retenidos, porAsignar };
 }
 
@@ -66,7 +69,7 @@ export function cerrarPropuesta(
   r: Registro, evals: EvaluacionCandidato[], desborde: boolean, sel: Seleccion | null, carga: Record<number, number>,
   extra: Partial<Propuesta> = {},
 ): Propuesta {
-  const base = { registro_id: r.id, segmento: segmentoDe(r), banderas_decision: desborde ? ["desborde_zona"] : [] };
+  const base = { registro_id: r.id, segmento: segmentoDe(r), banderas_decision: desborde ? ["desborde_zona"] : [], senales: r.senales };
   if (!sel) {
     return { ...base, usuario_id: null, candidatos: evals, motivo: "Sin candidato elegible: todos descartados por los filtros duros.", ...extra };
   }

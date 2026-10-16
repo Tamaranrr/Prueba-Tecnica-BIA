@@ -67,6 +67,12 @@ export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo)
   const p = params.pesos;
   const seg = segmentoDe(registro);
   const nota = senalesNota(registro.notas);
+  // Lectura de la nota por IA (si se pidió y hay). Suma a lo que ya detecta el texto exacto, no lo reemplaza.
+  const sen = params.usarNotasIA ? registro.senales : undefined;
+  const pideSenior = nota.pideSenior || !!sen?.perfil_senior;
+  const pideSector = nota.pideConocerSector || !!sen?.experto_sector;
+  const industrial = !!sen?.necesidad_industrial && seg !== "corporativo";
+  const poco = sen?.urgencia === "baja";
   const anotar: NonNullable<Seleccion["anotar"]> = {};
   const { pool, nota: nota_pool } = grupoParaCuenta(seg, elegibles, usuarios, params);
   for (const c of elegibles) if (!pool.includes(c)) anotar[c.usuario_id] = { puntaje: undefined, desglose: { fuera_del_grupo_de_expertos_corporativos: 0 } };
@@ -78,11 +84,13 @@ export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo)
     des.segmento = u.segmento_experto === seg ? p.segmento : 0;
     des.zona = registro.zona && u.zona === registro.zona ? p.zona : 0;
     des.carga = Math.round(p.carga * (1 - ratio(c)));
-    des.antiguedad = Math.round(p.antiguedad * Math.min(anios, 5) / 5);
+    // Antigüedad: desempata a favor de la experiencia, salvo en cuentas de poca prioridad, donde los nuevos ganan ritmo.
+    des.antiguedad = Math.round(p.antiguedad * (poco ? 1 - Math.min(anios, 5) / 5 : Math.min(anios, 5) / 5));
+    if (industrial && u.segmento_experto === "industrial") des.necesidad_industrial = p.segmento;
     // Restricciones fuertes: las cuentas grandes no van a vendedores nuevos; las notas pesan.
     if (seg === "corporativo" && dias < p.diasMinCorporativo) des.cuenta_grande_vendedor_nuevo = -1000;
-    if (nota.pideSenior && anios < p.aniosSenior) des.nota_pide_senior = -500;
-    if (nota.pideConocerSector && u.segmento_experto !== seg) des.nota_pide_conocer_sector = -300;
+    if (pideSenior && anios < p.aniosSenior) des.nota_pide_senior = -500;
+    if (pideSector && u.segmento_experto !== seg) des.nota_pide_conocer_sector = -300;
     const puntaje = Object.values(des).reduce((a, b) => a + b, 0);
     anotar[c.usuario_id] = { puntaje, desglose: des };
     return { c, puntaje };
@@ -90,9 +98,9 @@ export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo)
   puntuados.sort((a, b) => b.puntaje - a.puntaje || ratio(a.c) - ratio(b.c) || a.c.usuario_id - b.c.usuario_id);
   const g = puntuados[0];
   const d = anotar[g.c.usuario_id].desglose!;
-  const notas = [nota.pideSenior && "pide senior", nota.pideConocerSector && "pide conocer el sector"].filter(Boolean);
+  const notas = [pideSenior && "pide senior", pideSector && "pide conocer el sector", industrial && "necesidad industrial", poco && "poco prioritaria: favorece a vendedores nuevos"].filter(Boolean);
   const motivo =
     `Reglas: cuenta ${seg}; ${g.puntaje} pts (segmento ${d.segmento}, zona ${d.zona}, carga ${d.carga}, antigüedad ${d.antiguedad})` +
-    (notas.length ? `; la nota (${notas.join(", ")}) se aplicó como restricción` : "") + nota_pool + ".";
+    (notas.length ? `; lo que dice la nota (${notas.join(", ")}) se aplicó` : "") + nota_pool + ".";
   return { usuario_id: g.c.usuario_id, motivo, anotar };
 }

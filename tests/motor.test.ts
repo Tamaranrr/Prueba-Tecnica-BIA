@@ -204,3 +204,63 @@ test("reglas: la regla de cuentas grandes se puede apagar", () => {
   const res = proponer("reglas", datos(usuarios, [r(1, { empleados: 420 })], { cargaInicial: { 2: 9 } }), p);
   assert.equal(res.propuestas[0].usuario_id, 1);
 });
+
+// ───── lectura de notas por IA (señales) ─────
+const S = (p: Partial<NonNullable<Registro["senales"]>> = {}): NonNullable<Registro["senales"]> => ({
+  urgencia: "normal", perfil_senior: false, experto_sector: false, necesidad_industrial: false,
+  recuperacion_cliente: false, no_contactar: false, dato_poco_confiable: false, razon: "prueba", ...p,
+});
+
+test("notas IA: lo urgente se atiende primero, aunque haya llegado después", () => {
+  const regs = [r(1, { fecha_creacion: "2026-09-01" }), r(2, { fecha_creacion: "2026-09-20", senales: S({ urgencia: "alta" }) })];
+  const res = proponer("balanceo_carga", datos([u(1, { capacidad_maxima: 1 })], regs), parametros(HOY));
+  assert.equal(res.propuestas.find((p) => p.usuario_id === 1)!.registro_id, 2);
+  assert.deepEqual(res.propuestas.map((p) => p.registro_id), [2, 1]);
+});
+
+test("notas IA: perfil senior leído de una redacción que el texto exacto no detecta", () => {
+  const usuarios = [u(1, { fecha_ingreso: "2026-03-01" }), u(2, { fecha_ingreso: "2019-01-01" })];
+  const reg = r(1, { notas: "Quiere un ejecutivo con trayectoria", senales: S({ perfil_senior: true }) });
+  const carga = { cargaInicial: { 2: 3 } }; // el junior está menos cargado: sin la lectura, ganaría él
+  assert.equal(proponer("reglas", datos(usuarios, [reg], carga), parametros(HOY)).propuestas[0].usuario_id, 2);
+  const sin = proponer("reglas", datos(usuarios, [{ ...reg, senales: undefined }], carga), parametros(HOY));
+  assert.equal(sin.propuestas[0].usuario_id, 1);
+});
+
+test("notas IA: necesidad industrial favorece al experto industrial en cuentas no corporativas", () => {
+  const usuarios = [u(1, { segmento_experto: "pyme" }), u(2, { segmento_experto: "industrial" })];
+  const reg = r(1, { senales: S({ necesidad_industrial: true }) });
+  const res = proponer("reglas", datos(usuarios, [reg], { cargaInicial: { 1: 3 } }), parametros(HOY));
+  assert.equal(res.propuestas[0].usuario_id, 2);
+  assert.match(res.propuestas[0].motivo, /necesidad industrial/);
+  const sin = proponer("reglas", datos(usuarios, [{ ...reg, senales: undefined }], { cargaInicial: { 1: 3 } }), parametros(HOY));
+  assert.equal(sin.propuestas[0].usuario_id, 1);
+});
+
+test("notas IA: una cuenta de poca prioridad va al vendedor con menos antigüedad", () => {
+  const usuarios = [u(1, { fecha_ingreso: "2019-01-01" }), u(2, { fecha_ingreso: "2026-05-01" })];
+  const baja = proponer("reglas", datos(usuarios, [r(1, { senales: S({ urgencia: "baja" }) })]), parametros(HOY));
+  assert.equal(baja.propuestas[0].usuario_id, 2);
+  const normal = proponer("reglas", datos(usuarios, [r(1)]), parametros(HOY));
+  assert.equal(normal.propuestas[0].usuario_id, 1);
+});
+
+test("notas IA: quien pidió no ser contactado se retiene aunque la nota no use las palabras exactas", () => {
+  const res = proponer("balanceo_carga", datos([u(1)], [r(1, { senales: S({ no_contactar: true }) }), r(2)]), parametros(HOY));
+  assert.deepEqual(res.retenidos.map((x) => [x.registro_id, x.razones[0]]), [[1, "nota_no_contactar"]]);
+  assert.deepEqual(res.propuestas.map((p) => p.registro_id), [2]);
+});
+
+test("notas IA: con la opción apagada las señales no cambian nada", () => {
+  const usuarios = [u(1, { fecha_ingreso: "2026-03-01" }), u(2, { fecha_ingreso: "2019-01-01" })];
+  const con = [r(1, { fecha_creacion: "2026-09-01" }), r(2, { fecha_creacion: "2026-09-20", senales: S({ urgencia: "alta", perfil_senior: true, no_contactar: true }) })];
+  const sin = con.map((x) => ({ ...x, senales: undefined }));
+  const p = parametros(HOY, { usarNotasIA: false });
+  const forma = (rs: Registro[]) => { const x = proponer("reglas", datos(usuarios, rs), p); return [x.propuestas.map((q) => [q.registro_id, q.usuario_id]), x.retenidos.length]; };
+  assert.deepEqual(forma(con), forma(sin));
+});
+
+test("notas IA: la propuesta guarda la lectura usada, para la traza", () => {
+  const res = proponer("balanceo_carga", datos([u(1)], [r(1, { senales: S({ urgencia: "alta" }) })]), parametros(HOY));
+  assert.equal(res.propuestas[0].senales?.urgencia, "alta");
+});

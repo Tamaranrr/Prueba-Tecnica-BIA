@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, fmtFecha, fmtMoneda, type AsignacionTraza, type Datos, type Traza } from "@/lib/cliente";
-import { Badge, Banderas, boton, campo } from "./ui";
+import type { SenalesNota } from "@/lib/notas";
+import { Badge, Banderas, LecturaNota, boton, campo } from "./ui";
 
 export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }: {
   id: number; datos: Datos; actor: number | null; fecha: string; version: number;
@@ -86,6 +87,12 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
                 {dueno && !dueno.activo ? <span className="font-medium text-red-700"> Ese vendedor está inactivo: conviene reasignarlo.</span> : null}</p>
             )}
           </div>
+        )}
+
+        {traza && vigente && (vigente.parametros as { senales_nota?: SenalesNota | null }).senales_nota && (
+          <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+            La IA leyó la nota así: <LecturaNota senales={(vigente.parametros as { senales_nota?: SenalesNota }).senales_nota} />
+          </p>
         )}
 
         {traza && traza.asignaciones.length > 0 && (

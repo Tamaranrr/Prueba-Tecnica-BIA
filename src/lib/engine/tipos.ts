@@ -1,5 +1,8 @@
 // Tipos del motor. El motor es PURO: recibe datos, devuelve propuestas; no toca la base.
 
+import type { SenalesNota } from "../notas";
+export type { SenalesNota };
+
 export type Zona = "Centro" | "Costa" | "Occidente" | "Antioquia";
 export type Segmento = "corporativo" | "pyme" | "industrial";
 
@@ -12,6 +15,8 @@ export interface Registro {
   id: number; razon_social: string; nit: string; sector: string | null; empleados: number | null;
   ingresos_estimados: number | null; ciudad: string; zona: string | null; fuente: string;
   notas: string | null; estado: string; fecha_creacion: string; duplicado_de: number | null; banderas: string[];
+  /** Lectura de la nota hecha por IA (si se pidió y estuvo disponible). El motor la trata como un dato más. */
+  senales?: SenalesNota;
 }
 export interface Ausencia { id: number; usuario_id: number; desde: string; hasta: string | null; motivo: string }
 export interface Actividad { id: number; registro_id: number; usuario_id: number; tipo: string; fecha: string }
@@ -37,6 +42,8 @@ export interface ParametrosMotor {
   pesos: PesosReglas;
   /** Método reglas: una cuenta corporativa solo compite entre expertos corporativos elegibles (si hay alguno). */
   grandesSoloExpertos: boolean;
+  /** Usa la lectura de las notas: atiende primero lo urgente y aplica perfil senior, sector y necesidad industrial. */
+  usarNotasIA: boolean;
 }
 export interface PesosReglas {
   segmento: number; zona: number; carga: number; antiguedad: number;
@@ -64,7 +71,7 @@ export const PERFILES_PESOS: { id: string; nombre: string; desc: string; pesos: 
 
 export const PARAMETROS_DEFECTO: Omit<ParametrosMotor, "fechaReferencia"> = {
   zona: "estricta", desbordarSiNoHay: true, incluirLideres: false, estados: ["nuevo"], excluirUsuarios: [],
-  retener: ["duplicado", "pidio_no_insistir"], grandesSoloExpertos: true,
+  retener: ["duplicado", "pidio_no_insistir"], grandesSoloExpertos: true, usarNotasIA: true,
   pesos: PESOS_DEFECTO,
 };
 
@@ -82,6 +89,7 @@ export interface Propuesta {
   motivo: string;
   candidatos: EvaluacionCandidato[];
   segmento: Segmento;
+  senales?: SenalesNota;                     // lectura de la nota usada en esta decisión
   banderas_decision: string[];               // ej. "desborde_zona"
   // Solo método IA:
   prompt_enviado?: string; respuesta_modelo?: string; modelo?: string;

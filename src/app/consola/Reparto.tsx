@@ -4,7 +4,7 @@ import { Fragment, useState } from "react";
 import { api, METODOS, type Datos, type Preview } from "@/lib/cliente";
 import { PARAMETROS_DEFECTO, PERFILES_PESOS, PESOS_DEFECTO } from "@/lib/engine/tipos";
 import { TablaRegistros } from "./TablaRegistros";
-import { Banderas, Badge, Barra, boton, campo, Tarjeta, Titulo } from "./ui";
+import { Banderas, Badge, Barra, LecturaNota, boton, campo, Tarjeta, Titulo } from "./ui";
 
 type Alcance = "pendientes" | "seleccion" | "usuario";
 const RETENER = [
@@ -29,6 +29,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const [lideres, setLideres] = useState(false);
   const [retener, setRetener] = useState<string[]>(PARAMETROS_DEFECTO.retener);
   const [pesos, setPesos] = useState({ ...PESOS_DEFECTO });
+  const [usarNotas, setUsarNotas] = useState(PARAMETROS_DEFECTO.usarNotasIA);
   const [grandesExpertos, setGrandesExpertos] = useState(PARAMETROS_DEFECTO.grandesSoloExpertos);
   // Balancear funciona con zona estricta; reglas e IA pesan el encaje de segmento y tratan la zona como preferencia.
   const elegirMetodo = (id: string) => { setMetodo(id); setZona(id === "reglas" || id === "ia" ? "preferente" : "estricta"); };
@@ -50,7 +51,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
     alcance: alcance === "pendientes" ? { tipo: "pendientes" }
       : alcance === "seleccion" ? { tipo: "registros", ids: [...seleccion].sort((a, b) => a - b) }
       : { tipo: "usuario", usuario_id: origen },
-    parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos, grandesSoloExpertos: grandesExpertos },
+    parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos, grandesSoloExpertos: grandesExpertos, usarNotasIA: usarNotas },
   });
   const listoParaCorrer = alcance === "pendientes" || (alcance === "seleccion" && seleccion.size > 0) || (alcance === "usuario" && origen !== "");
   // Si cambia cualquier ajuste después de previsualizar, lo que se vería ya no es lo que se ejecutaría.
@@ -127,6 +128,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
             </select>
           </label>
           {zona === "estricta" && <label className="mb-2 flex gap-2 text-sm"><input type="checkbox" checked={desbordar} onChange={(e) => setDesbordar(e.target.checked)} />Desbordar a otras zonas si no hay nadie</label>}
+          <label className="mb-2 flex gap-2 text-sm" title="Una IA lee cada nota en texto libre y la convierte en señales: urgencia, perfil senior, experto del sector, necesidad industrial. Cada texto se lee una sola vez y queda guardado."><input type="checkbox" checked={usarNotas} onChange={(e) => setUsarNotas(e.target.checked)} />Leer las notas con IA (urgencia, perfil, necesidad)</label>
           <label className="mb-3 flex gap-2 text-sm"><input type="checkbox" checked={lideres} onChange={(e) => setLideres(e.target.checked)} />Incluir líderes como receptores</label>
           <p className="mb-1 text-sm text-slate-700">Retener para revisión (no asignar):</p>
           {RETENER.map((r) => (
@@ -190,6 +192,10 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                   <button className={boton("peligro")} disabled={cargando || !prev.resumen.asignables || !actor || desactualizada} onClick={ejecutar}>Ejecutar reparto</button>
                 </div>
               </div>
+              {prev.avisos?.map((a) => <p key={a} role="status" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{a}</p>)}
+              {usarNotas && prev.notas && prev.notas.distintas > 0 && (
+                <p className="mt-3 text-xs text-slate-500">Notas leídas con IA: {prev.notas.distintas} textos distintos ({prev.notas.nuevas === 0 ? "todos tomados del caché, sin costo" : `${prev.notas.nuevas} nuevos leídos ahora, el resto del caché`}).</p>
+              )}
               {desactualizada && (
                 <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                   Cambiaste la configuración después de previsualizar. Lo que ves ya no es lo que se ejecutaría: pulsa <b>Previsualizar reparto</b> otra vez.
@@ -224,6 +230,9 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                           {abierto && (
                             <tr className="bg-slate-50"><td colSpan={6} className="px-4 py-3">
                               <p className="mb-2 text-sm text-slate-700">{p.motivo}</p>
+                              {p.senales && (
+                                <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">Lectura de la nota: <LecturaNota senales={p.senales} /><span className="italic">{p.senales.razon}</span></p>
+                              )}
                               {p.prompt_enviado && (
                                 <details className="mb-2 text-xs"><summary className="cursor-pointer text-indigo-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
                                   <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.prompt_enviado}</pre>

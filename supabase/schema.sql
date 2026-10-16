@@ -131,3 +131,17 @@ create table previsualizaciones (
   usada_en    timestamptz
 );
 alter table previsualizaciones enable row level security;
+
+-- ───────────── Caché de la lectura de notas (IA) ─────────────
+-- Cada texto de nota distinto se lee una sola vez; las siguientes corridas lo toman de aquí.
+-- Es seguro correr solo este bloque en una base que ya tiene los datos: no borra nada.
+create table if not exists notas_senales (
+  texto           text primary key,
+  senales         jsonb not null,
+  modelo          text not null,
+  prompt_version  text not null,
+  entrada_tokens  int,
+  salida_tokens   int,
+  creada_en       timestamptz not null default now()
+);
+alter table notas_senales enable row level security;

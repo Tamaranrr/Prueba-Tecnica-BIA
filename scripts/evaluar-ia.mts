@@ -6,6 +6,7 @@ import { senalesNota } from "../src/lib/engine/segmento";
 import type { Propuesta, ResultadoMotor } from "../src/lib/engine/tipos";
 import { proponerIA, MODELO_IA, PROMPT_VERSION } from "../src/lib/ia";
 import { armarLote, leerTodo } from "../src/lib/servicio";
+import { leerSenales } from "../src/lib/notasServicio";
 
 const fecha = process.argv[2] ?? "2026-10-16";
 const repeticion = Number(process.argv[3] ?? 20);
@@ -36,8 +37,10 @@ function metricas(res: ResultadoMotor) {
 const tabla = (nombre: string, m: ReturnType<typeof metricas>) =>
   console.log(`${nombre.padEnd(30)} asig ${String(m.n).padStart(2)} | segmento ${m.seg.padStart(4)} | zona ${m.zona.padStart(4)} | grandes c/experto ${m.grandes.padStart(5)} | grandes a <90d ${m.grNuevos} | nota senior ${m.senior.padStart(4)} | nota sector ${m.sector.padStart(4)} | ocup. máx ${m.ocupMax.padStart(4)} | desv ${m.desv.padStart(4)} | respaldo ${m.respaldo}`);
 
+const lectura = await leerSenales(base.registros.filter((r) => r.estado === "nuevo").map((r) => r.notas));
+console.log(`Lectura de notas: ${lectura.distintas} textos, ${lectura.nuevas} leídos ahora. ${lectura.avisos.join(" | ")}`);
 const lote = (metodo: "round_robin" | "balanceo_carga" | "reglas" | "ia", zona: "estricta" | "preferente") =>
-  armarLote(base, { metodo, alcance: { tipo: "pendientes" }, fechaReferencia: fecha, parametros: { zona } });
+  armarLote(base, { metodo, alcance: { tipo: "pendientes" }, fechaReferencia: fecha, parametros: { zona } }, lectura.mapa);
 
 console.log(`Modelo: ${MODELO_IA} | prompt ${PROMPT_VERSION} | fecha ${fecha}\n`);
 const det: Record<string, ResultadoMotor> = {};
@@ -48,7 +51,10 @@ const li = lote("ia", "preferente");
 const t0 = Date.now();
 const ia = await proponerIA(li.datos, li.params, 100);
 const seg1 = (Date.now() - t0) / 1000;
-const costo = (u: { entrada: number; salida: number }) => (u.entrada * 4 + u.salida * 20) / 1e6;
+// US$ por millón de tokens (entrada, salida) de cada modelo
+const PRECIO: Record<string, [number, number]> = { "claude-opus-5-5": [4, 20], "claude-sonnet-5-5": [2, 10], "claude-haiku-5-5": [0.1, 0.5] };
+const [pIn, pOut] = PRECIO[MODELO_IA] ?? [4, 20];
+const costo = (u: { entrada: number; salida: number }) => (u.entrada * pIn + u.salida * pOut) / 1e6;
 
 console.log("RESULTADOS sobre los mismos pendientes");
 tabla("round_robin (zona estricta)", metricas(det.round_robin));

@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { marcasDeSenales } from "@/lib/engine/senales";
+import type { SenalesNota } from "@/lib/notas";
 
 const TONOS: Record<string, string> = {
   gris: "bg-slate-100 text-slate-700 ring-slate-200", azul: "bg-indigo-50 text-indigo-700 ring-indigo-200",
@@ -50,5 +52,17 @@ export function Kpi({ etiqueta, valor, nota, tono = "gris" }: { etiqueta: string
       <p className={`mt-1 text-2xl font-bold tabular-nums ${color}`}>{valor}</p>
       {nota && <p className="text-xs text-slate-500">{nota}</p>}
     </div>
+  );
+}
+
+/** Lo que la IA leyó en la nota de un registro: urgencia y señales activas. */
+export function LecturaNota({ senales }: { senales?: SenalesNota | null }) {
+  if (!senales) return null;
+  const urg = { alta: "rojo", normal: "gris", baja: "azul" } as const;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1" title={senales.razon}>
+      <Badge tono={urg[senales.urgencia]}>urgencia {senales.urgencia}</Badge>
+      {marcasDeSenales(senales).map((m) => <Badge key={m} tono="violeta">{m}</Badge>)}
+    </span>
   );
 }
