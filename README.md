@@ -248,8 +248,8 @@ Estos son dos de mis prompts, **tal cual** los escribí (con mis errores de tipe
 
 *Por qué sirvió:* en vez de dar el trabajo por terminado, pedí comprobarlo contra el enunciado. Salieron, entre otras cosas, que el repositorio estaba público cuando la prueba pide privado, que "Ejecutar" podía aplicar una configuración distinta de la previsualizada, que los filtros no permitían repartir lo filtrado, que un duplicado ya trabajado se asignaba a ciegas y que un filtro por dueño mostraba registros descartados. Todo se corrigió y quedó con pruebas.
 
-**2. Cuestionar si la IA realmente aportaba**
+**2. Atacar primero lo más débil: umbrales y pesos**
 
-> Volvamos a revisar la prueba , es esta : *(aquí pegué el enunciado completo)* Verifiquemos el  uso de la ia, cuando nos aporta y como podriamos mejorarlo?
+> Empezemos con lo que esta debil, primero empecemos conumbrales de segmeno y pesos.
 
-*Por qué sirvió:* la primera evaluación mostró que la IA igualaba a las reglas pero no las superaba. Al preguntar cuándo aporta, se vio que 60 de los 71 pendientes traen una nota en texto libre con información útil y que el código solo entendía 2 frases exactas. De ahí salió la lectura de notas con IA (señales estructuradas con caché), su evaluación con etiquetas y la prueba de un modelo más barato (Haiku 5.5 cuesta unas 28 veces menos que Opus con una calidad comparable). Ver [Lectura de las notas con IA](#lectura-de-las-notas-con-ia).
+*Por qué sirvió:* la auditoría del prompt 1 dejó una lista de lo que seguía débil, y yo elegí empezar por lo que más pesaba sobre el reparto: los umbrales de segmento y los pesos eran supuestos de la IA, no medidos. Se midieron con los datos reales ([scripts/evaluar.mts](scripts/evaluar.mts)): el corte de 500 empleados estaba mal (dejaba fuera a las de 420, que son del grupo grande) y pasó a 300 empleados o 18.000 M COP; con distintos pesos, las cuentas grandes con experto corporativo variaban entre 7 y 16 de 16, así que dejaron de depender de un peso y pasaron a una regla explícita (ahora siempre 16 de 16); y los pesos por defecto cambiaron a 30/30/60/10 (cuentas en su zona de 51 % a 70 %, desbalance de 16,9 a 11,7 puntos). Ver [Cómo se eligieron los umbrales y pesos](#cómo-se-eligieron-los-umbrales-y-pesos).
