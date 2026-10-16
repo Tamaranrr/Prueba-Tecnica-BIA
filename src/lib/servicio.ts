@@ -1,9 +1,10 @@
 import { db, ErrorNegocio, ok } from "./db";
 import { calcularCarga, duenosActuales } from "./engine/carga";
 import { evaluarCandidato } from "./engine/filtros";
-import { parametros, proponer, type DatosMotor } from "./engine/motor";
+import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
+import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, proponerIA } from "./ia";
 import type {
-  Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, Usuario,
+  Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, ResultadoMotor, Usuario,
 } from "./engine/tipos";
 
 export type MetodoDeterminista = Exclude<Metodo, "ia">;
@@ -13,7 +14,9 @@ export type Alcance =
   | { tipo: "registros"; ids: number[] };       // reasignar registros concretos
 
 export interface Solicitud {
-  metodo: MetodoDeterminista;
+  metodo: Metodo;
+  /** Solo método IA: máximo de registros que se consultan al modelo en esta corrida. */
+  ia?: { limite?: number };
   alcance: Alcance;
   parametros?: Partial<ParametrosMotor>;
   fechaReferencia?: string;
@@ -45,8 +48,8 @@ export async function leerTodo() {
 }
 type Base = Awaited<ReturnType<typeof leerTodo>>;
 
-/** Arma el lote, la carga y los parámetros efectivos, y corre el método. No escribe nada. */
-export function planificar(base: Base, sol: Solicitud) {
+/** Arma el lote, la carga y los parámetros efectivos. No corre ningún método ni escribe nada. */
+export function armarLote(base: Base, sol: Solicitud) {
   const fecha = sol.fechaReferencia ?? hoy();
   const duenos = duenosActuales(base.actividad, base.vigentes);
   const reasigna = sol.alcance.tipo !== "pendientes";
@@ -75,15 +78,33 @@ export function planificar(base: Base, sol: Solicitud) {
   const cargaInicial = calcularCarga(base.registros.filter((r) => !idsLote.has(r.id)), base.actividad, base.vigentes);
   const params = parametros(fecha, extra);
   const datos: DatosMotor = { registros: lote, usuarios: base.usuarios, ausencias: base.ausencias, cargaInicial };
-  const resultado = proponer(sol.metodo, datos, params);
-  return { resultado, reasigna, duenos, cargaInicial, tipo: reasigna ? ("reasignacion" as const) : ("asignacion" as const) };
+  return { datos, params, reasigna, duenos, cargaInicial, tipo: reasigna ? ("reasignacion" as const) : ("asignacion" as const) };
+}
+
+/** Método determinista sobre el lote armado. */
+export function planificar(base: Base, sol: Solicitud) {
+  if (sol.metodo === "ia") throw new ErrorNegocio("El método de IA se previsualiza con previsualizar() y se ejecuta con su preview_id.");
+  const l = armarLote(base, sol);
+  return { ...l, resultado: proponer(sol.metodo, l.datos, l.params) };
 }
 
 export async function previsualizar(sol: Solicitud) {
   const base = await leerTodo();
-  const { resultado, cargaInicial, duenos } = planificar(base, sol);
+  let resultado: ResultadoMotor;
+  let sin_procesar = 0;
+  let preview_id: string | undefined;
+  const { cargaInicial, duenos, datos, params } = armarLote(base, sol);
+  if (sol.metodo === "ia") {
+    const limite = Math.min(Math.max(Math.trunc(sol.ia?.limite ?? LIMITE_IA_DEFECTO), 1), LIMITE_IA_MAXIMO);
+    const r = await proponerIA(datos, params, limite);
+    sin_procesar = r.sin_procesar;
+    resultado = r;
+    preview_id = (ok(await db().from("previsualizaciones").insert({ metodo: "ia", solicitud: sol as never, resultado: r as never } as never).select("id").single(), "guardar previsualización") as unknown as { id: string }).id;
+  } else {
+    resultado = proponer(sol.metodo, datos, params);
+  }
   return {
-    ...resultado, cargaInicial,
+    ...resultado, cargaInicial, preview_id, sin_procesar,
     propuestas: resultado.propuestas.map((p) => ({ ...p, dueno_actual: duenos.get(p.registro_id) ?? null })),
     resumen: {
       asignables: resultado.propuestas.filter((p) => p.usuario_id !== null).length,
@@ -154,25 +175,66 @@ export async function persistir(
   return ej.id;
 }
 
-export async function ejecutar(sol: Solicitud, actorId: unknown) {
+/** Recupera una previsualización de IA vigente (1 h) y aún no usada. */
+async function leerPreview(id: unknown): Promise<{ solicitud: Solicitud; resultado: ResultadoMotor }> {
+  if (typeof id !== "string") throw new ErrorNegocio("El método de IA se ejecuta sobre una previsualización: falta preview_id.");
+  const r = ok(await db().from("previsualizaciones").select("*").eq("id", id).maybeSingle(), "previsualización") as unknown as
+    { solicitud: Solicitud; resultado: ResultadoMotor; creada_en: string; usada_en: string | null } | null;
+  if (!r) throw new ErrorNegocio("La previsualización no existe.");
+  if (r.usada_en) throw new ErrorNegocio("Esa previsualización ya se ejecutó.");
+  if (Date.now() - Date.parse(r.creada_en) > 3_600_000) throw new ErrorNegocio("La previsualización venció (1 hora). Genera otra.");
+  return r;
+}
+
+export async function ejecutar(sol: Solicitud, actorId: unknown, previewId?: unknown) {
   const actor = await resolverActor(actorId);
   const base = await leerTodo();
-  const { resultado, tipo, duenos } = planificar(base, sol);
-  const filas: FilaNueva[] = resultado.propuestas.filter((p) => p.usuario_id !== null).map((p) => ({
-    registro_id: p.registro_id, usuario_id: p.usuario_id!, motivo: p.motivo, candidatos: p.candidatos,
-    banderas_decision: p.banderas_decision, dueno_anterior: duenos.get(p.registro_id) ?? null,
-  }));
-  if (!filas.length) throw new ErrorNegocio("No hay nada que asignar con esta configuración.", {
-    retenidos: resultado.retenidos.length, sin_candidato: resultado.propuestas.length,
-  });
-  const id = await persistir(
-    { tipo, metodo: resultado.metodo, parametros: resultado.parametros, actor, fecha: resultado.parametros.fechaReferencia },
-    filas, base.vigentes,
-  );
-  return {
-    ejecucion_id: id, asignados: filas.length,
-    sin_candidato: resultado.propuestas.length - filas.length, retenidos: resultado.retenidos,
-  };
+  let filas: FilaNueva[];
+  let meta: Parameters<typeof persistir>[0];
+  let sinCandidato: number;
+  let retenidos: ResultadoMotor["retenidos"];
+  const l = armarLote(base, sol);
+
+  if (sol.metodo === "ia") {
+    // El modelo no es determinista: se ejecuta lo previsualizado (con su prompt y respuesta), no una consulta nueva.
+    const prev = await leerPreview(previewId);
+    const carga = { ...l.cargaInicial };
+    const ctx = { ausencias: base.ausencias, carga, params: l.params };
+    const reg = new Map(l.datos.registros.map((r) => [r.id, r]));
+    const usuarios = new Map(base.usuarios.map((u) => [u.id, u]));
+    const validas = prev.resultado.propuestas.filter((p) => p.usuario_id !== null);
+    for (const p of validas) {
+      const r = reg.get(p.registro_id), u = usuarios.get(p.usuario_id!);
+      // Entre la previsualización y ahora pudo cambiar algo (otro reparto, una ausencia nueva...): se revalida.
+      const ev = r && u ? evaluarCandidato(u, r, ctx, true) : null;
+      if (!r || !ev?.elegible || razonesRetencion(r, l.params).length) {
+        throw new ErrorNegocio(`Los datos cambiaron desde la previsualización (registro #${p.registro_id}). Genera una nueva previsualización.`);
+      }
+      carga[u!.id] = (carga[u!.id] ?? 0) + 1;
+    }
+    filas = validas.map((p) => ({
+      registro_id: p.registro_id, usuario_id: p.usuario_id!, motivo: p.motivo, candidatos: p.candidatos,
+      banderas_decision: p.banderas_decision, dueno_anterior: l.duenos.get(p.registro_id) ?? null,
+      prompt_enviado: p.prompt_enviado, respuesta_modelo: p.respuesta_modelo, modelo: p.modelo,
+    }));
+    sinCandidato = prev.resultado.propuestas.length - filas.length;
+    retenidos = prev.resultado.retenidos;
+    meta = { tipo: l.tipo, metodo: "ia", parametros: { ...prev.resultado.parametros, ia: { modelo: MODELO_IA, limite: sol.ia?.limite ?? LIMITE_IA_DEFECTO, preview_id: previewId } }, actor, fecha: prev.resultado.parametros.fechaReferencia };
+  } else {
+    const { resultado } = planificar(base, sol);
+    filas = resultado.propuestas.filter((p) => p.usuario_id !== null).map((p) => ({
+      registro_id: p.registro_id, usuario_id: p.usuario_id!, motivo: p.motivo, candidatos: p.candidatos,
+      banderas_decision: p.banderas_decision, dueno_anterior: l.duenos.get(p.registro_id) ?? null,
+    }));
+    sinCandidato = resultado.propuestas.length - filas.length;
+    retenidos = resultado.retenidos;
+    meta = { tipo: l.tipo, metodo: resultado.metodo, parametros: resultado.parametros, actor, fecha: resultado.parametros.fechaReferencia };
+  }
+
+  if (!filas.length) throw new ErrorNegocio("No hay nada que asignar con esta configuración.", { retenidos: retenidos.length, sin_candidato: sinCandidato });
+  const id = await persistir(meta, filas, base.vigentes);
+  if (sol.metodo === "ia") await db().from("previsualizaciones").update({ usada_en: new Date().toISOString() } as never).eq("id", previewId as string);
+  return { ejecucion_id: id, asignados: filas.length, sin_candidato: sinCandidato, retenidos };
 }
 
 /** Reasignación manual de un registro a un vendedor concreto, con motivo obligatorio. */

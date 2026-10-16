@@ -16,7 +16,7 @@ export async function cuerpo(req: Request): Promise<Record<string, unknown>> {
   try { return (await req.json()) as Record<string, unknown>; } catch { throw new ErrorNegocio("El cuerpo debe ser JSON válido."); }
 }
 
-const METODOS = ["round_robin", "balanceo_carga", "reglas"];
+const METODOS = ["round_robin", "balanceo_carga", "reglas", "ia"];
 export function validarSolicitud(b: Record<string, unknown>): Solicitud {
   if (!METODOS.includes(String(b.metodo))) throw new ErrorNegocio(`Método inválido. Opciones: ${METODOS.join(", ")}.`);
   const a = (b.alcance ?? { tipo: "pendientes" }) as { tipo?: string; usuario_id?: unknown; ids?: unknown };
@@ -27,5 +27,5 @@ export function validarSolicitud(b: Record<string, unknown>): Solicitud {
   else throw new ErrorNegocio("Alcance inválido: use pendientes, usuario{usuario_id} o registros{ids}.");
   const f = b.fechaReferencia;
   if (f !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(f))) throw new ErrorNegocio("fechaReferencia debe ser AAAA-MM-DD.");
-  return { metodo: b.metodo as Solicitud["metodo"], alcance, parametros: (b.parametros ?? {}) as Solicitud["parametros"], fechaReferencia: f as string | undefined };
+  return { metodo: b.metodo as Solicitud["metodo"], alcance, parametros: (b.parametros ?? {}) as Solicitud["parametros"], ia: b.ia as Solicitud["ia"], fechaReferencia: f as string | undefined };
 }

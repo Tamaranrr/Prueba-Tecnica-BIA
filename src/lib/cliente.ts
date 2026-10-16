@@ -10,6 +10,7 @@ export interface Preview {
   metodo: string; parametros: ParametrosMotor; propuestas: PropuestaPreview[]; retenidos: Retenido[];
   cargaInicial: Record<number, number>; cargaFinal: Record<number, number>;
   resumen: { asignables: number; sin_candidato: number; retenidos: number };
+  preview_id?: string; sin_procesar?: number;
 }
 export interface Ejecucion {
   id: string; tipo: string; metodo: string; parametros: ParametrosMotor; ejecutado_por: string;
@@ -41,6 +42,7 @@ export const METODOS = [
   { id: "round_robin", nombre: "Round-robin ponderado", desc: "Rota los registros entre los vendedores elegibles; quien tiene más cupo libre recibe más turnos." },
   { id: "balanceo_carga", nombre: "Balanceo de carga", desc: "Cada registro va al vendedor menos ocupado (carga ÷ capacidad). Nivela a los nuevos con los antiguos." },
   { id: "reglas", nombre: "Reglas de negocio", desc: "Puntúa segmento experto, zona, carga y antigüedad. Las cuentas grandes no van a vendedores nuevos y se respetan las notas (senior, conoce el sector)." },
+  { id: "ia", nombre: "Asignación por IA", desc: "Claude lee el registro completo (incluidas las notas) y elige entre los vendedores que ya pasaron los filtros duros. Cada decisión guarda el prompt y la respuesta." },
 ] as const;
 
 export const fmtFecha = (iso: string) =>

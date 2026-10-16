@@ -27,6 +27,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
   const [lideres, setLideres] = useState(false);
   const [retener, setRetener] = useState<string[]>(PARAMETROS_DEFECTO.retener);
   const [pesos, setPesos] = useState({ ...PARAMETROS_DEFECTO.pesos });
+  const [limiteIA, setLimiteIA] = useState(10);
   const [prev, setPrev] = useState<Preview | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
   const vendedoresConCarga = datos.usuarios.filter((u) => u.rol === "vendedor" && u.carga > 0);
 
   const solicitud = () => ({
-    metodo, fechaReferencia: fecha,
+    metodo, fechaReferencia: fecha, ia: { limite: limiteIA },
     alcance: alcance === "pendientes" ? { tipo: "pendientes" } : { tipo: "usuario", usuario_id: origen },
     parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos },
   });
@@ -54,7 +55,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
     if (!confirm(`Se asignarán ${prev.resumen.asignables} registros con el método "${prev.metodo}". ¿Confirmar?`)) return;
     setCargando(true); setError(null);
     try {
-      const r = await api<{ asignados: number }>("/api/ejecutar", { ...solicitud(), ejecutado_por: actor });
+      const r = await api<{ asignados: number }>("/api/ejecutar", { ...solicitud(), ejecutado_por: actor, preview_id: prev.preview_id });
       setPrev(null);
       await alEjecutar(`Listo: ${r.asignados} registros asignados. Quedó guardado en Auditoría.`);
     } catch (e) { setError((e as Error).message); }
@@ -90,7 +91,12 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                 <p className="mt-1 text-xs text-slate-600">{m.desc}</p>
               </label>
             ))}
-            <p className="rounded bg-slate-50 p-2.5 text-xs text-slate-500"><b>Asignación por IA</b> — próximamente.</p>
+            {metodo === "ia" && (
+              <label className="flex items-center justify-between gap-2 rounded bg-slate-50 p-2.5 text-xs text-slate-600" title="Cada registro es una consulta al modelo; se hacen una tras otra porque cada decisión cambia la carga de la siguiente.">
+                Máx. registros por corrida
+                <input type="number" min={1} max={40} className={`${campo} w-20`} value={limiteIA} onChange={(e) => setLimiteIA(Number(e.target.value))} />
+              </label>
+            )}
           </div>
         </Tarjeta>
 
@@ -124,7 +130,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
         </Tarjeta>
 
         <button className={`${boton("primario")} w-full`} disabled={cargando || !listoParaCorrer} onClick={previsualizar}>
-          {cargando ? "Calculando…" : "Previsualizar reparto"}
+          {cargando ? (metodo === "ia" ? "Consultando a Claude… puede tardar" : "Calculando…") : "Previsualizar reparto"}
         </button>
       </div>
 
@@ -154,6 +160,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                   <Titulo>Previsualización — no guardada</Titulo>
                   <p className="text-sm text-slate-700">
                     <b className="text-emerald-700">{prev.resumen.asignables}</b> se asignarían · <b className="text-amber-700">{prev.resumen.retenidos}</b> retenidos · <b className="text-red-700">{prev.resumen.sin_candidato}</b> sin candidato
+                    {prev.sin_procesar ? <> · <b>{prev.sin_procesar}</b> quedan para la siguiente corrida</> : null}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -190,6 +197,11 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                           {abierto && (
                             <tr className="bg-slate-50"><td colSpan={6} className="px-4 py-3">
                               <p className="mb-2 text-sm text-slate-700">{p.motivo}</p>
+                              {p.prompt_enviado && (
+                                <details className="mb-2 text-xs"><summary className="cursor-pointer text-blue-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
+                                  <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.prompt_enviado}</pre>
+                                  <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre></details>
+                              )}
                               <table className="w-full text-xs"><thead className="text-slate-400"><tr><th className="text-left">Candidato</th><th className="text-left">Carga</th><th className="text-left">Puntaje</th><th className="text-left">Detalle</th></tr></thead>
                                 <tbody>{p.candidatos.map((c) => (
                                   <tr key={c.usuario_id} className={`border-t border-slate-200 ${c.usuario_id === p.usuario_id ? "bg-emerald-50 font-medium" : ""}`}>

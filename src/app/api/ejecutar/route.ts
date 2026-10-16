@@ -5,5 +5,5 @@ import { ejecutar } from "@/lib/servicio";
 export const POST = (req: Request) =>
   responder(async () => {
     const b = await cuerpo(req);
-    return ejecutar(validarSolicitud(b), b.ejecutado_por);
+    return ejecutar(validarSolicitud(b), b.ejecutado_por, b.preview_id);
   });

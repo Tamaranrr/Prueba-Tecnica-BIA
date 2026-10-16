@@ -40,13 +40,11 @@ export function evaluarRegistro(r: Registro, d: DatosMotor, ctx: ContextoFiltros
 
 const SELECTORES = { round_robin: roundRobin, balanceo_carga: balanceoCarga, reglas } as const;
 
-/** Reparte un lote con un método determinista. Puro: no escribe en ninguna parte. */
-export function proponer(metodo: Exclude<Metodo, "ia">, d: DatosMotor, params: ParametrosMotor): ResultadoMotor {
+/** Separa retenidos de asignables y ordena el lote. Común a los métodos deterministas y al de IA. */
+export function prepararLote(metodo: Metodo, d: DatosMotor, params: ParametrosMotor) {
   const carga: Record<number, number> = { ...d.cargaInicial };
   const usuarios = new Map(d.usuarios.map((u) => [u.id, u]));
-  const estado: EstadoLote = { pesosRR: {} };
   const ctx: ContextoFiltros = { ausencias: d.ausencias, carga, params };
-
   const retenidos: Retenido[] = [];
   const porAsignar: Registro[] = [];
   for (const r of d.registros) {
@@ -57,23 +55,35 @@ export function proponer(metodo: Exclude<Metodo, "ia">, d: DatosMotor, params: P
   // FIFO (el que más lleva esperando primero); en reglas las cuentas grandes van antes.
   porAsignar.sort((a, b) =>
     (metodo === "reglas" ? tamano(b) - tamano(a) : 0) || a.fecha_creacion.localeCompare(b.fecha_creacion) || a.id - b.id);
+  return { carga, usuarios, ctx, retenidos, porAsignar };
+}
 
+/** Arma la propuesta de un registro y actualiza la carga del lote si hubo elegido. */
+export function cerrarPropuesta(
+  r: Registro, evals: EvaluacionCandidato[], desborde: boolean, sel: Seleccion | null, carga: Record<number, number>,
+  extra: Partial<Propuesta> = {},
+): Propuesta {
+  const base = { registro_id: r.id, segmento: segmentoDe(r), banderas_decision: desborde ? ["desborde_zona"] : [] };
+  if (!sel) {
+    return { ...base, usuario_id: null, candidatos: evals, motivo: "Sin candidato elegible: todos descartados por los filtros duros.", ...extra };
+  }
+  carga[sel.usuario_id] = (carga[sel.usuario_id] ?? 0) + 1;
+  return {
+    ...base, usuario_id: sel.usuario_id, candidatos: evals.map((e) => ({ ...e, ...sel.anotar?.[e.usuario_id] })),
+    motivo: sel.motivo + (desborde ? ` Sin candidatos en la zona ${r.zona}: se desbordó a otras zonas.` : ""), ...extra,
+  };
+}
+
+/** Reparte un lote con un método determinista. Puro: no escribe en ninguna parte. */
+export function proponer(metodo: Exclude<Metodo, "ia">, d: DatosMotor, params: ParametrosMotor): ResultadoMotor {
+  const { carga, usuarios, ctx, retenidos, porAsignar } = prepararLote(metodo, d, params);
+  const estado: EstadoLote = { pesosRR: {} };
   const propuestas: Propuesta[] = [];
   for (const r of porAsignar) {
     const { evals, desborde } = evaluarRegistro(r, d, ctx);
     const elegibles = evals.filter((e) => e.elegible);
-    const base = { registro_id: r.id, segmento: segmentoDe(r), banderas_decision: desborde ? ["desborde_zona"] : [] };
-    if (!elegibles.length) {
-      propuestas.push({ ...base, usuario_id: null, candidatos: evals, motivo: "Sin candidato elegible: todos descartados por los filtros duros." });
-      continue;
-    }
-    const sel: Seleccion = SELECTORES[metodo]({ registro: r, elegibles, usuarios, params, estado });
-    const candidatos: EvaluacionCandidato[] = evals.map((e) => ({ ...e, ...sel.anotar?.[e.usuario_id] }));
-    carga[sel.usuario_id] = (carga[sel.usuario_id] ?? 0) + 1;
-    propuestas.push({
-      ...base, usuario_id: sel.usuario_id, candidatos,
-      motivo: sel.motivo + (desborde ? ` Sin candidatos en la zona ${r.zona}: se desbordó a otras zonas.` : ""),
-    });
+    const sel = elegibles.length ? SELECTORES[metodo]({ registro: r, elegibles, usuarios, params, estado }) : null;
+    propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga));
   }
   return { metodo, parametros: params, propuestas, retenidos, cargaFinal: carga };
 }

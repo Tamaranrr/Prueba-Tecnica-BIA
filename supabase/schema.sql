@@ -117,3 +117,17 @@ alter table ausencias     enable row level security;
 alter table actividad     enable row level security;
 alter table ejecuciones   enable row level security;
 alter table asignaciones  enable row level security;
+
+-- ───────────── Previsualizaciones (método IA) ─────────────
+-- El modelo no es determinista: lo que se ejecuta es EXACTAMENTE lo que se previsualizó
+-- (con su prompt y respuesta), no una nueva consulta al modelo.
+drop table if exists previsualizaciones cascade;
+create table previsualizaciones (
+  id          uuid primary key default gen_random_uuid(),
+  metodo      text not null,
+  solicitud   jsonb not null,
+  resultado   jsonb not null,
+  creada_en   timestamptz not null default now(),
+  usada_en    timestamptz
+);
+alter table previsualizaciones enable row level security;
