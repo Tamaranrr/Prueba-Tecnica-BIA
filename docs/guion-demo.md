@@ -5,7 +5,7 @@
 - Abrir https://prueba-tecnica-bia.vercel.app en una ventana limpia, zoom del navegador al 100 %.
 - Tener a mano una pestaña con el repositorio y otra con `supabase/schema.sql`.
 - Grabar la pantalla con voz. No hace falta cámara. Ensayar una vez completo.
-- Ejecuta como **Diana Marcela Ospina (admin)**, la opción por defecto.
+- Entra con la cuenta de **Diana Marcela Ospina (admin)** (la clave está en `.claves-demo.txt`; no la muestres en pantalla: ten la ventana lista con la sesión ya iniciada, o grábate después del ingreso).
 
 **Idea central que hay que dejar clara:** el motor decide con reglas que se pueden auditar; la IA solo elige entre candidatos que ya pasaron los filtros duros; y todo queda en la traza.
 

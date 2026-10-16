@@ -10,7 +10,7 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
 | **Video** | _(enlace)_ |
 | **Guion del video** | [docs/guion-demo.md](docs/guion-demo.md) |
 
-> La consola **no tiene login** (el reto no lo pide). Cualquiera con la URL puede ejecutar asignaciones y el método de IA consume saldo de API. Ver [Limitaciones](#limitaciones-conocidas).
+> La consola exige **ingreso con correo y clave** (admin o líder). Las claves de los revisores se entregan por separado: no están en el repositorio. Ver [Seguridad](#decisiones-de-diseño) y [Limitaciones](#limitaciones-conocidas).
 
 ---
 
@@ -35,7 +35,8 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
 - **Datos sucios marcados, no escondidos.** Se normaliza al cargar y cada cambio queda como bandera (`zona_normalizada`, `zona_inferida_por_ciudad`, `sin_capacidad`, `equipo_inexistente:99`…), junto con la fila original en `datos_originales`.
 - **Retener en vez de adivinar.** Los duplicados y los registros que pidieron *"que no insistiéramos"* no se asignan: aparecen como **retenidos para revisión humana**, con su razón.
 - **Reproducible.** Cada ejecución guarda la *fecha de referencia* usada para ausencias y antigüedad.
-- **Seguridad.** Todo el acceso a Supabase es desde el servidor con la secret key; las tablas tienen RLS activo y sin políticas, así que la key pública no lee nada. Solo un admin o líder activo puede ejecutar.
+- **Seguridad.** Todo el acceso a Supabase es desde el servidor con la secret key; las tablas tienen RLS activo y sin políticas, así que la key pública no lee nada.
+- **Ingreso y quién ejecuta.** Cada admin o líder entra con su correo y su clave (guardada con scrypt y sal; nunca en claro). La sesión es una cookie `HttpOnly` firmada con HMAC que vence a las 8 horas. **Toda la API exige sesión** y se revalida en la base en cada petición, así que dar de baja a un usuario le quita el acceso al instante. Quien ejecuta se toma de la sesión, **no del cuerpo de la petición**, y es lo que queda en la traza: ya no se puede suplantar a otro usuario. Si falta `SESSION_SECRET` la consola queda cerrada, no abierta. Las respuestas nunca incluyen el hash de la clave.
 
 ## Supuestos (revisables)
 
@@ -172,17 +173,20 @@ ANTHROPIC_API_KEY=
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co   # sin /rest/v1/
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=                            # solo servidor
+SESSION_SECRET=                                       # firma las sesiones; mínimo 32 caracteres
 # ANTHROPIC_MODEL=claude-haiku-5-5                    # opcional: modelo que decide (por defecto Haiku 5.5)
 # ANTHROPIC_MODEL_NOTAS=claude-haiku-5-5              # opcional: modelo que lee las notas
 ```
 
 1. En Supabase → **SQL Editor**, ejecutar [supabase/schema.sql](supabase/schema.sql) (crea las tablas, incluida la caché de lectura de notas; borra las existentes). Si la base ya existe y solo falta la caché, basta con ejecutar el último bloque del archivo (`notas_senales`), que no borra nada.
-2. Cargar los datos: `npm run seed` (los CSV están en `data/`). `npm run seed:dry` muestra el resumen de normalización sin tocar la base.
-3. `npm run dev` → http://localhost:3000
+2. Crear las claves de ingreso: `npm run claves` (a cada admin y líder activo; se escriben en `.claves-demo.txt`, ignorado por git, y no se muestran en pantalla). Con `-- --regenerar` se cambian todas.
+3. Cargar los datos: `npm run seed` (los CSV están en `data/`). `npm run seed:dry` muestra el resumen de normalización sin tocar la base.
+4. `npm run dev` → http://localhost:3000 e ingresar con una de las cuentas de `.claves-demo.txt`.
 
 | Script | Qué hace |
 |---|---|
 | `npm test` | 30 pruebas del motor (filtros duros, carga, métodos, zona, retención, duplicados, cuentas grandes, lectura de notas) |
+| `npm run claves` | Crea las claves de ingreso de admin y líderes (a un archivo local, sin mostrarlas) |
 | `npm run seed` / `seed:dry` | Carga los CSV normalizados / solo muestra el resumen |
 | `npm run reset` | Vacía la traza y restaura los datos (útil antes de grabar la demo) |
 | `npx tsx --env-file=.env.local scripts/evaluar.mts [fecha] [--fino]` | Mide cada método frente a cómo está hoy la operación y prueba pesos alternativos (solo lee) |
@@ -191,17 +195,23 @@ SUPABASE_SERVICE_ROLE_KEY=                            # solo servidor
 | `npx tsx --env-file=.env.local scripts/evaluar-senales.mts` | Muestra qué cambia en el reparto al usar la lectura de notas |
 | `npx tsx --env-file=.env.local scripts/probar-ia.mts 3` | Prueba el método de IA sin escribir en la traza |
 
-**Despliegue:** Vercel con las 4 variables de entorno. No usar la integración de Supabase de Vercel (crea otra base).
+**Despliegue:** Vercel con las 5 variables de entorno (las 4 de arriba más `SESSION_SECRET`). No usar la integración de Supabase de Vercel (crea otra base).
 
 ## API
 
-Todas devuelven JSON; los errores de negocio responden 400 con un mensaje legible.
+Todas devuelven JSON; los errores de negocio responden 400 con un mensaje legible. **Todas exigen sesión** (401 sin ella), salvo el ingreso.
+
+| Ruta | Para qué |
+|---|---|
+| `POST /api/sesion` | Ingreso con `email` y `clave`; fija la cookie de sesión |
+| `GET /api/sesion` | Quién soy (401 si no hay sesión) |
+| `DELETE /api/sesion` | Cierra la sesión |
 
 | Ruta | Para qué |
 |---|---|
 | `GET /api/datos?fecha=` | Registros, equipo, carga y ausencias para la consola |
 | `POST /api/preview` | Simula un reparto sin guardar. Devuelve avisos (por ejemplo, si no se pudieron leer las notas). Método `ia` guarda la previsualización y devuelve `preview_id` |
-| `POST /api/ejecutar` | Ejecuta y escribe la traza. Requiere `ejecutado_por` (admin o líder activo). Con IA, requiere `preview_id` |
+| `POST /api/ejecutar` | Ejecuta y escribe la traza; quien ejecuta sale de la sesión. Con IA, requiere `preview_id` |
 | `POST /api/reasignar` | Reasignación manual de un registro, con motivo obligatorio |
 | `GET /api/registros/:id` | Datos, actividad y cadena completa de asignaciones |
 | `GET /api/ejecuciones` | Historial de ejecuciones |
@@ -222,7 +232,8 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 
 ## Limitaciones conocidas
 
-- **Sin autenticación.** `ejecutado_por` lo elige quien usa la consola. Lo siguiente sería login por rol.
+- **El ingreso es sencillo a propósito.** Una clave por usuario, sin recuperación de clave, sin segundo factor y sin bloqueo real por intentos (solo un retraso de 0,4 s por fallo). Todos los admin y líderes pueden hacer todo: no hay permisos por equipo. En producción lo natural sería SSO de la empresa (o Supabase Auth) con permisos por rol.
+- **Una sesión no se puede revocar de forma individual** antes de las 8 horas; lo que sí funciona es dar de baja al usuario, que pierde el acceso en la siguiente petición.
 - **La IA es secuencial y con tope por corrida** (10 por defecto, 40 máximo): cada decisión cambia la carga de la siguiente y el plan gratuito de Vercel corta a los 60 s. Para volúmenes grandes habría que mover la IA a una cola.
 - **Sin transacciones reales**: `supabase-js` no las ofrece. Si falla a mitad de una ejecución se revierte lo escrito, pero una función SQL (RPC) sería más robusta.
 - **Umbrales y pesos están medidos sobre estos datos, pero no validados con negocio.** El corte entre cuenta grande y mediana sale de un hueco real en los datos; los pesos son una política (experto, zona o balance) que negocio debe elegir. Por eso la consola trae perfiles.
