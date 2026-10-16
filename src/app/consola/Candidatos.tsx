@@ -42,7 +42,7 @@ export function TablaCandidatos({ candidatos, elegidoId }: { candidatos: Evaluac
               <td className="pr-2">{k ? <Badge tono={TONO_NIVEL[k.nivel]}>{k.nivel}{k.antiguedadEstimada ? " (estimado)" : ""}</Badge> : "sin dato"}</td>
               <td className="pr-2 whitespace-nowrap">{c.carga}/{c.capacidad ?? "sin dato"}{c.capacidad_provisional && <span className="ml-1 text-amber-700" title="Capacidad provisional de un recién entrado">(prov.)</span>}</td>
               <td className="pr-2" title={k ? `Ingresos en cartera: ${fmtMoneda(k.ingresos)}. ${k.acciones14d} acciones en 14 días. ${k.diasDesdeUltima === null ? "Sin actividad registrada" : `Última actividad hace ${k.diasDesdeUltima} días`}. ${k.frias} cuentas frías.` : undefined}>
-                {k ? `${k.cuentas} cuentas: ${k.corporativo} corp · ${k.industrial} ind · ${k.pyme} pyme` : "sin dato"}
+                {k ? `${k.cuentas} ${k.cuentas === 1 ? "cuenta" : "cuentas"}: ${k.corporativo} corp · ${k.industrial} ind · ${k.pyme} pyme` : "sin dato"}
               </td>
               <td className="pr-2">{c.puntaje ?? "sin dato"}</td>
               <td>
