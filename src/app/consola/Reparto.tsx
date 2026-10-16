@@ -3,9 +3,10 @@
 import { Fragment, useState } from "react";
 import { api, METODOS, type Datos, type Preview } from "@/lib/cliente";
 import { PARAMETROS_DEFECTO } from "@/lib/engine/tipos";
-import { Badge, Banderas, Barra, boton, campo, Tarjeta, Titulo } from "./ui";
+import { TablaRegistros } from "./TablaRegistros";
+import { Banderas, Badge, Barra, boton, campo, Tarjeta, Titulo } from "./ui";
 
-type Alcance = "pendientes" | "usuario";
+type Alcance = "pendientes" | "seleccion" | "usuario";
 const RETENER = [
   { id: "duplicado", nombre: "Posibles duplicados" },
   { id: "pidio_no_insistir", nombre: "Pidieron no insistir" },
@@ -16,8 +17,9 @@ const PESOS = [
   { id: "carga", nombre: "Carga baja" }, { id: "antiguedad", nombre: "Antigüedad" },
 ] as const;
 
-export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
+export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, setSeleccion }: {
   datos: Datos; actor: number | null; fecha: string; abrir: (id: number) => void; alEjecutar: (m: string) => Promise<void>;
+  seleccion: Set<number>; setSeleccion: (s: Set<number>) => void;
 }) {
   const [metodo, setMetodo] = useState<string>("balanceo_carga");
   const [alcance, setAlcance] = useState<Alcance>("pendientes");
@@ -29,6 +31,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
   const [pesos, setPesos] = useState({ ...PARAMETROS_DEFECTO.pesos });
   const [limiteIA, setLimiteIA] = useState(10);
   const [prev, setPrev] = useState<Preview | null>(null);
+  const [prevSol, setPrevSol] = useState<string | null>(null); // configuración exacta con la que se previsualizó
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [abiertos, setAbiertos] = useState<Set<number>>(new Set());
@@ -40,22 +43,30 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
 
   const solicitud = () => ({
     metodo, fechaReferencia: fecha, ia: { limite: limiteIA },
-    alcance: alcance === "pendientes" ? { tipo: "pendientes" } : { tipo: "usuario", usuario_id: origen },
+    alcance: alcance === "pendientes" ? { tipo: "pendientes" }
+      : alcance === "seleccion" ? { tipo: "registros", ids: [...seleccion].sort((a, b) => a - b) }
+      : { tipo: "usuario", usuario_id: origen },
     parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos },
   });
-  const listoParaCorrer = alcance === "pendientes" || origen !== "";
+  const listoParaCorrer = alcance === "pendientes" || (alcance === "seleccion" && seleccion.size > 0) || (alcance === "usuario" && origen !== "");
+  // Si cambia cualquier ajuste después de previsualizar, lo que se vería ya no es lo que se ejecutaría.
+  const desactualizada = prev !== null && prevSol !== JSON.stringify(solicitud());
 
   const previsualizar = async () => {
     setCargando(true); setError(null); setAbiertos(new Set());
-    try { setPrev(await api<Preview>("/api/preview", solicitud())); } catch (e) { setError((e as Error).message); setPrev(null); }
+    try {
+      const sol = solicitud();
+      const p = await api<Preview>("/api/preview", sol);
+      setPrev(p); setPrevSol(JSON.stringify(sol));
+    } catch (e) { setError((e as Error).message); setPrev(null); }
     setCargando(false);
   };
   const ejecutar = async () => {
-    if (!prev || !actor) return;
+    if (!prev || !actor || !prevSol || desactualizada) return;
     if (!confirm(`Se asignarán ${prev.resumen.asignables} registros con el método "${prev.metodo}". ¿Confirmar?`)) return;
     setCargando(true); setError(null);
     try {
-      const r = await api<{ asignados: number }>("/api/ejecutar", { ...solicitud(), ejecutado_por: actor, preview_id: prev.preview_id });
+      const r = await api<{ asignados: number }>("/api/ejecutar", { ...JSON.parse(prevSol), ejecutado_por: actor, preview_id: prev.preview_id });
       setPrev(null);
       await alEjecutar(`Listo: ${r.asignados} registros asignados. Quedó guardado en Auditoría.`);
     } catch (e) { setError((e as Error).message); }
@@ -67,17 +78,19 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[22rem_1fr]">
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         <Tarjeta>
           <Titulo>1 · Qué repartir</Titulo>
           <label className="mb-2 flex items-start gap-2 text-sm"><input type="radio" checked={alcance === "pendientes"} onChange={() => setAlcance("pendientes")} className="mt-1" />
-            <span>Registros pendientes <Badge tono="azul">{pendientes.length}</Badge></span></label>
+            <span>Todos los pendientes <Badge tono="azul">{pendientes.length}</Badge></span></label>
+          <label className={`mb-2 flex items-start gap-2 text-sm ${seleccion.size ? "" : "text-slate-400"}`}><input type="radio" disabled={seleccion.size === 0} checked={alcance === "seleccion"} onChange={() => setAlcance("seleccion")} className="mt-1" />
+            <span>Solo los registros seleccionados <Badge tono={seleccion.size ? "azul" : "gris"}>{seleccion.size}</Badge>{seleccion.size === 0 && <span className="block text-xs">Márcalos en la tabla de la derecha o en Registros.</span>}</span></label>
           <label className="flex items-start gap-2 text-sm"><input type="radio" checked={alcance === "usuario"} onChange={() => setAlcance("usuario")} className="mt-1" />
             <span>Reasignar todo lo de un vendedor</span></label>
           {alcance === "usuario" && (
             <select className={`${campo} mt-2 w-full`} value={origen} onChange={(e) => setOrigen(e.target.value ? Number(e.target.value) : "")}>
               <option value="">Elegir vendedor…</option>
-              {vendedoresConCarga.map((u) => <option key={u.id} value={u.id}>{u.nombre}: {u.carga} registros{u.activo ? "" : " (inactivo)"}</option>)}
+              {vendedoresConCarga.map((u) => <option key={u.id} value={u.id}>{u.nombre}: {u.carga} registro{u.carga === 1 ? "" : "s"}{!u.activo ? " (inactivo)" : u.ausencia ? ` (ausente: ${u.ausencia.motivo.toLowerCase()})` : ""}</option>)}
             </select>
           )}
         </Tarjeta>
@@ -86,7 +99,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
           <Titulo>2 · Método</Titulo>
           <div className="space-y-2">
             {METODOS.map((m) => (
-              <label key={m.id} className={`block cursor-pointer rounded border p-2.5 text-sm ${metodo === m.id ? "border-blue-600 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label key={m.id} className={`block cursor-pointer rounded border p-2.5 text-sm ${metodo === m.id ? "border-indigo-600 bg-indigo-50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" className="mr-2" checked={metodo === m.id} onChange={() => setMetodo(m.id)} /><b>{m.nombre}</b>
                 <p className="mt-1 text-xs text-slate-600">{m.desc}</p>
               </label>
@@ -134,21 +147,19 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
         </button>
       </div>
 
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {error && <p role="alert" className="rounded border border-red-300 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</p>}
 
-        {!prev && !error && (
-          <Tarjeta><p className="text-sm text-slate-500">Configura el reparto y pulsa <b>Previsualizar</b>. No se guarda nada hasta que lo ejecutes.</p>
-            <h3 className="mt-5 mb-2 text-sm font-semibold text-slate-600">Pendientes ({pendientes.length})</h3>
-            <div className="max-h-[32rem] overflow-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-white text-xs uppercase text-slate-400"><tr><th className="py-1">Empresa</th><th>Zona</th><th>Segmento</th><th>Empl.</th><th>Fuente</th><th>Alertas</th></tr></thead>
-                <tbody>{pendientes.map((r) => (
-                  <tr key={r.id} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => abrir(r.id)}>
-                    <td className="py-1.5 pr-2">{r.razon_social}</td><td>{r.zona ?? "sin dato"}</td><td>{r.segmento}</td><td>{r.empleados ?? "sin dato"}</td><td>{r.fuente}</td>
-                    <td><Banderas lista={r.banderas.filter((b) => ["posible_duplicado", "pidio_no_insistir", "base_sin_validar", "sin_zona"].includes(b))} /></td></tr>))}</tbody>
-              </table>
-            </div>
+        {!prev && (
+          <Tarjeta>
+            <p className="mb-3 text-sm text-slate-600">Configura el reparto y pulsa <b>Previsualizar</b>. No se guarda nada hasta que lo ejecutes. Puedes filtrar la tabla y marcar solo los registros que quieras repartir.</p>
+            {seleccion.size > 0 && alcance !== "seleccion" && (
+              <p className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                Tienes {seleccion.size} registros seleccionados.
+                <button className={boton("primario")} onClick={() => setAlcance("seleccion")}>Repartir solo estos</button>
+              </p>
+            )}
+            <TablaRegistros datos={datos} base={pendientes} seleccion={seleccion} setSeleccion={setSeleccion} abrir={abrir} estadoFijo alto="30rem" />
           </Tarjeta>
         )}
 
@@ -164,10 +175,15 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <button className={boton()} onClick={() => setPrev(null)}>Descartar</button>
-                  <button className={boton("peligro")} disabled={cargando || !prev.resumen.asignables || !actor} onClick={ejecutar}>Ejecutar reparto</button>
+                  <button className={boton()} onClick={() => { setPrev(null); setPrevSol(null); }}>Descartar</button>
+                  <button className={boton("peligro")} disabled={cargando || !prev.resumen.asignables || !actor || desactualizada} onClick={ejecutar}>Ejecutar reparto</button>
                 </div>
               </div>
+              {desactualizada && (
+                <p role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  Cambiaste la configuración después de previsualizar. Lo que ves ya no es lo que se ejecutaría: pulsa <b>Previsualizar reparto</b> otra vez.
+                </p>
+              )}
               <h3 className="mt-4 mb-2 text-sm font-semibold text-slate-600">Carga por vendedor (actual + lo nuevo)</h3>
               <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
                 {cambioPorUsuario.map((u) => (
@@ -181,7 +197,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
               <Titulo>Propuesta registro por registro</Titulo>
               <div className="max-h-[36rem] overflow-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-white text-xs uppercase text-slate-400"><tr><th className="py-1">Empresa</th><th>Zona</th><th>Segmento</th>{alcance === "usuario" && <th>Hoy con</th>}<th>Asignar a</th><th></th></tr></thead>
+                  <thead className="sticky top-0 bg-white text-xs uppercase text-slate-400"><tr><th className="py-1">Empresa</th><th>Zona</th><th>Segmento</th>{alcance !== "pendientes" && <th>Hoy con</th>}<th>Asignar a</th><th></th></tr></thead>
                   <tbody>
                     {prev.propuestas.map((p) => {
                       const r = regs.get(p.registro_id)!;
@@ -190,7 +206,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                         <Fragment key={p.registro_id}>
                           <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => alternar(p.registro_id)}>
                             <td className="py-1.5 pr-2">{abierto ? "▾" : "▸"} {r.razon_social}</td><td>{r.zona ?? "sin dato"}</td><td>{p.segmento}</td>
-                            {alcance === "usuario" && <td>{nombre(p.dueno_actual)}</td>}
+                            {alcance !== "pendientes" && <td>{p.dueno_actual ? nombre(p.dueno_actual) : "sin dueño"}</td>}
                             <td className={p.usuario_id ? "font-medium text-slate-900" : "text-red-700"}>{p.usuario_id ? nombre(p.usuario_id) : "Sin candidato"}</td>
                             <td className="text-right"><Banderas lista={p.banderas_decision} /></td>
                           </tr>
@@ -198,7 +214,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                             <tr className="bg-slate-50"><td colSpan={6} className="px-4 py-3">
                               <p className="mb-2 text-sm text-slate-700">{p.motivo}</p>
                               {p.prompt_enviado && (
-                                <details className="mb-2 text-xs"><summary className="cursor-pointer text-blue-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
+                                <details className="mb-2 text-xs"><summary className="cursor-pointer text-indigo-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
                                   <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.prompt_enviado}</pre>
                                   <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre></details>
                               )}

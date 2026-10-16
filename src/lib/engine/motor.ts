@@ -23,7 +23,10 @@ export function razonesRetencion(r: Registro, params: ParametrosMotor): string[]
   const out: string[] = [];
   if (!params.estados.includes(r.estado)) out.push(`estado_${r.estado}`);
   if (r.duplicado_de !== null && params.retener.includes("duplicado")) out.push(`duplicado_de_${r.duplicado_de}`);
-  for (const b of r.banderas) if (b !== "posible_duplicado" && params.retener.includes(b)) out.push(b);
+  for (const b of r.banderas) {
+    if (b.startsWith("duplicado_en_")) { if (params.retener.includes("duplicado")) out.push(b); }
+    else if (b !== "posible_duplicado" && params.retener.includes(b)) out.push(b);
+  }
   return out;
 }
 

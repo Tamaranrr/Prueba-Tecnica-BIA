@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type Datos } from "@/lib/cliente";
 import { Auditoria } from "./Auditoria";
 import { Detalle } from "./Detalle";
 import { Equipo } from "./Equipo";
 import { Registros } from "./Registros";
 import { Reparto } from "./Reparto";
-import { campo } from "./ui";
+import { esperaDe } from "./TablaRegistros";
+import { campo, Kpi } from "./ui";
 
 const TABS = [
   { id: "reparto", nombre: "Repartir" },
@@ -26,6 +27,7 @@ export function Consola() {
   const [detalle, setDetalle] = useState<number | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [version, setVersion] = useState(0); // sube cada vez que cambia la traza
+  const [seleccion, setSeleccion] = useState<Set<number>>(new Set());
 
   const aplicar = useCallback((d: Datos) => {
     setDatos(d);
@@ -40,52 +42,76 @@ export function Consola() {
   }, [aplicar]);
 
   const cambioTraza = async (mensaje: string) => {
-    setAviso(mensaje); setVersion((v) => v + 1);
+    setAviso(mensaje); setVersion((v) => v + 1); setSeleccion(new Set());
     await cargar(fecha);
-    setTimeout(() => setAviso(null), 6000);
+    setTimeout(() => setAviso(null), 7000);
   };
 
-  if (error) return <p className="m-8 rounded bg-red-50 p-4 text-red-800">No se pudo cargar: {error}</p>;
-  if (!datos) return <p className="m-8 text-slate-500">Cargando…</p>;
+  const kpis = useMemo(() => {
+    if (!datos) return null;
+    const pend = datos.registros.filter((r) => r.estado === "nuevo");
+    const esperas = pend.map((r) => esperaDe(r, datos.fecha) ?? 0);
+    const vend = datos.usuarios.filter((u) => u.rol === "vendedor");
+    const disp = vend.filter((u) => u.activo && !u.ausencia && (u.capacidad_maxima ?? 0) > u.carga);
+    const cap = vend.filter((u) => u.activo && u.capacidad_maxima).reduce((s, u) => s + (u.capacidad_maxima ?? 0), 0);
+    const uso = vend.filter((u) => u.activo && u.capacidad_maxima).reduce((s, u) => s + u.carga, 0);
+    return {
+      pendientes: pend.length, masAntiguo: esperas.length ? Math.max(...esperas) : 0, conEspera: esperas.filter((d) => d >= 7).length,
+      disponibles: disp.length, vendedores: vend.length, ocupacion: cap ? Math.round((uso / cap) * 100) : 0,
+    };
+  }, [datos]);
+
+  if (error) return <p className="m-8 rounded-lg bg-rose-50 p-4 text-rose-800">No se pudo cargar: {error}</p>;
+  if (!datos || !kpis) return <p className="m-8 text-slate-500">Cargando…</p>;
 
   const ejecutores = datos.usuarios.filter((u) => ["admin", "lider"].includes(u.rol) && u.activo);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 pb-16">
-      <header className="flex flex-wrap items-center justify-between gap-3 py-5">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Motor de asignación comercial</h1>
-          <p className="text-sm text-slate-500">
-            {datos.registros.filter((r) => r.estado === "nuevo").length} registros pendientes · {datos.usuarios.filter((u) => u.rol === "vendedor" && u.activo).length} vendedores activos
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <label className="flex items-center gap-2 text-slate-600">Ejecuta
-            <select className={campo} value={actor ?? ""} onChange={(e) => setActor(Number(e.target.value))}>
-              {ejecutores.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.rol})</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-slate-600" title="Fecha usada para ausencias, ingreso y antigüedad. Queda guardada en la traza.">Fecha de referencia
-            <input type="date" className={campo} value={fecha} onChange={(e) => { setFecha(e.target.value); cargar(e.target.value); }} />
-          </label>
+    <div className="min-h-screen bg-slate-50">
+      <header className="border-b border-slate-800 bg-slate-900 text-white">
+        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <div>
+            <h1 className="text-lg font-bold tracking-tight">Motor de asignación comercial</h1>
+            <p className="text-sm text-slate-400">Reparto con previsualización y traza completa</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2 text-slate-300">Ejecuta
+              <select className={`${campo} text-slate-900`} value={actor ?? ""} onChange={(e) => setActor(Number(e.target.value))}>
+                {ejecutores.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.rol})</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-slate-300" title="Fecha usada para ausencias, ingreso y antigüedad. Queda guardada en la traza.">Fecha de referencia
+              <input type="date" className={`${campo} text-slate-900`} value={fecha}
+                onChange={(e) => { setFecha(e.target.value); if (e.target.value) cargar(e.target.value); }} />
+            </label>
+          </div>
         </div>
       </header>
 
-      <nav className="mb-5 flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${tab === t.id ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
-            {t.nombre}
-          </button>
-        ))}
-      </nav>
+      <div className="mx-auto w-full max-w-7xl px-4 pb-16">
+        <section aria-label="Resumen" className="grid grid-cols-2 gap-3 py-5 lg:grid-cols-4">
+          <Kpi etiqueta="Pendientes" valor={kpis.pendientes} nota={`${kpis.conEspera} esperan 7 días o más`} tono={kpis.conEspera ? "ambar" : "gris"} />
+          <Kpi etiqueta="Más antiguo sin tocar" valor={`${kpis.masAntiguo} d`} nota="desde su creación" tono={kpis.masAntiguo >= 14 ? "rojo" : "gris"} />
+          <Kpi etiqueta="Vendedores disponibles" valor={`${kpis.disponibles}/${kpis.vendedores}`} nota="activos, sin ausencia y con cupo" />
+          <Kpi etiqueta="Ocupación del equipo" valor={`${kpis.ocupacion}%`} nota="carga sobre capacidad" tono={kpis.ocupacion >= 85 ? "rojo" : "gris"} />
+        </section>
 
-      {aviso && <p role="status" className="mb-4 rounded border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">{aviso}</p>}
+        <nav className="mb-5 inline-flex rounded-xl bg-slate-200/70 p-1" aria-label="Secciones">
+          {TABS.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
+              className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${tab === t.id ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}>
+              {t.nombre}{t.id === "reparto" && seleccion.size > 0 ? <span className="ml-1.5 rounded-full bg-indigo-600 px-1.5 text-xs text-white">{seleccion.size}</span> : null}
+            </button>
+          ))}
+        </nav>
 
-      {tab === "reparto" && <Reparto datos={datos} actor={actor} fecha={fecha} abrir={setDetalle} alEjecutar={cambioTraza} />}
-      {tab === "registros" && <Registros datos={datos} abrir={setDetalle} />}
-      {tab === "equipo" && <Equipo datos={datos} />}
-      {tab === "auditoria" && <Auditoria version={version} />}
+        {aviso && <p role="status" className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-900">{aviso}</p>}
+
+        {tab === "reparto" && <Reparto datos={datos} actor={actor} fecha={fecha} abrir={setDetalle} alEjecutar={cambioTraza} seleccion={seleccion} setSeleccion={setSeleccion} />}
+        {tab === "registros" && <Registros datos={datos} abrir={setDetalle} seleccion={seleccion} setSeleccion={setSeleccion} irARepartir={() => setTab("reparto")} />}
+        {tab === "equipo" && <Equipo datos={datos} />}
+        {tab === "auditoria" && <Auditoria version={version} />}
+      </div>
 
       {detalle !== null && (
         <Detalle key={detalle} id={detalle} datos={datos} actor={actor} fecha={fecha} version={version}

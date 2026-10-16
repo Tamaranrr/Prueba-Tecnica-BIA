@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { calcularCarga } from "../src/lib/engine/carga";
 import { proponer, parametros, type DatosMotor } from "../src/lib/engine/motor";
+import { marcarDuplicadosEnTrabajo } from "../src/lib/engine/duplicados";
 import { segmentoDe } from "../src/lib/engine/segmento";
 import type { Ausencia, Registro, Usuario } from "../src/lib/engine/tipos";
 
@@ -162,4 +163,20 @@ test("reglas: los pesos se pueden configurar", () => {
   const base = parametros(HOY, { zona: "preferente" });
   assert.equal(proponer("reglas", datos(usuarios, regs), { ...base, pesos: { ...base.pesos, segmento: 5, zona: 50 } }).propuestas[0].usuario_id, 1);
   assert.equal(proponer("reglas", datos(usuarios, regs), { ...base, pesos: { ...base.pesos, segmento: 80, zona: 5 } }).propuestas[0].usuario_id, 2);
+});
+
+// ───── duplicados con gemelo ya trabajado ─────
+test("un nuevo cuyo gemelo ya está en gestión o descartado se retiene; si el gemelo también es nuevo, no", () => {
+  const todos = [
+    r(1), r(2, { duplicado_de: 1, estado: "en_gestion" }),                // 1 es nuevo y su duplicado ya se trabaja
+    r(3), r(4, { duplicado_de: 3, estado: "nuevo" }),                     // ambos nuevos
+    r(5), r(6, { duplicado_de: 5, estado: "descartado" }),                // el gemelo se descartó
+    r(7),                                                                 // sin gemelo
+  ];
+  const lote = marcarDuplicadosEnTrabajo(todos.filter((x) => x.estado === "nuevo"), todos);
+  const res = proponer("balanceo_carga", datos([u(1)], lote), parametros(HOY));
+  assert.deepEqual(res.retenidos.map((x) => x.registro_id).sort((a, b) => a - b), [1, 4, 5]);
+  assert.deepEqual(res.propuestas.map((p) => p.registro_id).sort((a, b) => a - b), [3, 7]);
+  assert.ok(res.retenidos.find((x) => x.registro_id === 1)!.razones[0].startsWith("duplicado_en_en_gestion"));
+  assert.equal(todos[0].banderas.length, 0); // no muta lo recibido
 });

@@ -1,6 +1,7 @@
 import { db, ErrorNegocio, ok } from "./db";
 import { calcularCarga, duenosActuales } from "./engine/carga";
 import { evaluarCandidato } from "./engine/filtros";
+import { marcarDuplicadosEnTrabajo } from "./engine/duplicados";
 import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
 import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, proponerIA } from "./ia";
 import type {
@@ -52,7 +53,6 @@ type Base = Awaited<ReturnType<typeof leerTodo>>;
 export function armarLote(base: Base, sol: Solicitud) {
   const fecha = sol.fechaReferencia ?? hoy();
   const duenos = duenosActuales(base.actividad, base.vigentes);
-  const reasigna = sol.alcance.tipo !== "pendientes";
   let lote: Registro[];
   let extra: Partial<ParametrosMotor> = { ...sol.parametros };
 
@@ -72,6 +72,10 @@ export function armarLote(base: Base, sol: Solicitud) {
       if (d !== undefined && r.estado !== "nuevo") extra.excluirUsuarios = [...new Set([...(extra.excluirUsuarios ?? []), d])];
     }
   }
+
+  lote = marcarDuplicadosEnTrabajo(lote, base.registros);
+  // Es reasignación solo si algún registro del lote ya tenía trabajo encima; repartir "nuevos" elegidos a mano no lo es.
+  const reasigna = lote.some((r) => r.estado !== "nuevo");
 
   // La carga no cuenta los registros que se están moviendo (liberan cupo a su dueño actual).
   const idsLote = new Set(lote.map((r) => r.id));
