@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx --env-file=.env.local scripts/seed.mts",
+    "test": "tsx --test tests/*.test.ts",
     "seed:dry": "tsx scripts/seed.mts --dry"
   },
   "dependencies": {
