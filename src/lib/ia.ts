@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import { diasEntre } from "./engine/filtros";
-import { balanceoCarga } from "./engine/metodos";
+import { balanceoCarga, grupoParaCuenta } from "./engine/metodos";
 import { cerrarPropuesta, evaluarRegistro, prepararLote, type DatosMotor } from "./engine/motor";
 import type { EvaluacionCandidato, ParametrosMotor, Propuesta, Registro, ResultadoMotor, Usuario } from "./engine/tipos";
 import { ErrorNegocio } from "./db";
@@ -81,10 +81,12 @@ export async function proponerIA(
 
   for (const r of lote) {
     const { evals, desborde } = evaluarRegistro(r, d, ctx);
-    const elegibles = evals.filter((e) => e.elegible);
+    // Mismo grupo que ve el método de reglas: las cuentas grandes solo se le muestran al modelo con expertos corporativos.
+    const seg0 = cerrarPropuesta(r, evals, desborde, null, {}).segmento;
+    const { pool: elegibles, nota: notaGrupo } = grupoParaCuenta(seg0, evals.filter((e) => e.elegible), usuarios, params);
     if (!elegibles.length) { propuestas.push(cerrarPropuesta(r, evals, desborde, null, carga)); continue; }
 
-    const seg = cerrarPropuesta(r, evals, desborde, null, {}).segmento;
+    const seg = seg0;
     const mensaje = construirMensaje(r, seg, elegibles, usuarios, params.fechaReferencia);
     const prompt = `[SYSTEM]\n${PROMPT_SISTEMA}\n\n[USER]\n${mensaje}`;
     let eleccion: Eleccion | null = null;
@@ -107,7 +109,7 @@ export async function proponerIA(
     }
 
     if (eleccion) {
-      const sel = { usuario_id: eleccion.usuario_id, motivo: `IA (${MODELO_IA}): ${eleccion.razon}` };
+      const sel = { usuario_id: eleccion.usuario_id, motivo: `IA (${MODELO_IA}): ${eleccion.razon}${notaGrupo ? ` [${notaGrupo.replace(/^; /, "")}]` : ""}` };
       propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga, { prompt_enviado: eleccion.prompt, respuesta_modelo: eleccion.cruda, modelo: MODELO_IA }));
     } else {
       // Respaldo determinista: nunca dejamos un registro colgado por un fallo del modelo.

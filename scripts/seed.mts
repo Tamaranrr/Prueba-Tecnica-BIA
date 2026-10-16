@@ -40,7 +40,9 @@ const usuarios = leer("usuarios.csv").map((u) => {
   const banderas: string[] = [];
   let equipo_id = num(u.equipo_id);
   if (equipo_id !== null && !equipoIds.has(equipo_id)) { banderas.push(`equipo_inexistente:${equipo_id}`); equipo_id = null; }
-  let { zona, bandera } = normZona(u.zona);
+  const nz = normZona(u.zona);
+  let zona = nz.zona;
+  const bandera = nz.bandera;
   if (bandera) banderas.push(bandera);
   if (!zona && equipo_id !== null && equipoZona.get(equipo_id)) { zona = equipoZona.get(equipo_id)!; banderas.push("zona_heredada_del_equipo"); }
   if (!zona && u.rol !== "admin") banderas.push("sin_zona");
@@ -88,7 +90,9 @@ const BANDERAS_NOTA: [RegExp, string][] = [
 
 const registros = regsCsv.map((r) => {
   const banderas: string[] = [];
-  let { zona, bandera } = normZona(r.zona);
+  const nz = normZona(r.zona);
+  let zona = nz.zona;
+  const bandera = nz.bandera;
   if (bandera) banderas.push(bandera);
   if (r.zona && r.zona !== zona) banderas.push("zona_normalizada");
   if (!zona) {

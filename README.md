@@ -19,7 +19,7 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
 1. **Motor** con cuatro métodos, todos con la misma interfaz y los mismos filtros duros previos:
    - **Round-robin ponderado**: rota entre los vendedores elegibles; quien tiene más cupo libre recibe más turnos.
    - **Balanceo de carga**: cada registro va al menos ocupado (`carga ÷ capacidad`). Nivela a los nuevos con los antiguos.
-   - **Reglas de negocio**: puntúa segmento experto, zona, carga y antigüedad (pesos configurables). Las cuentas corporativas no van a vendedores con menos de N días y las notas *"alguien senior"* / *"que conozca el sector"* se aplican como restricción.
+   - **Reglas de negocio**: puntúa segmento experto, zona, carga y antigüedad (pesos configurables, con perfiles). Las cuentas corporativas solo compiten entre expertos corporativos con la antigüedad mínima, y las notas *"alguien senior"* / *"que conozca el sector"* se aplican como restricción.
    - **IA** (Claude): lee el registro completo, notas incluidas, y elige entre los candidatos que ya pasaron los filtros.
 2. **Consola** (`/`): ver pendientes, elegir y configurar el método, **previsualizar** sin guardar, ejecutar, reasignar (todo lo de un vendedor o un registro suelto) y abrir un registro para ver por qué quedó donde está.
 3. **Traza**: cada asignación guarda registro, usuario, método, parámetros, quién la ejecutó, cuándo, si reemplazó a otra, el motivo, el puntaje de **todos** los candidatos evaluados y, en el método IA, el **prompt completo con los datos del registro**, la respuesta cruda y el modelo.
@@ -43,13 +43,43 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
 | **Carga de un vendedor** | No hay columna de dueño en `registros`. Se calcula así: registros en `asignado`/`en_gestion` cuyo **último movimiento en `actividad`** es del vendedor; una asignación vigente del motor manda sobre la actividad histórica. |
 | **Zona Bogotá** | No es zona de ningún equipo → se trata como **Centro**. |
 | **Zona vacía** | Se infiere por la ciudad (zona más frecuente entre registros de esa ciudad) y se marca `zona_inferida_por_ciudad`. |
-| **Segmento de la cuenta** | Corporativo si ≥ 500 empleados o ≥ 30.000 M COP de ingresos; industrial si el sector es fabril/agro/construcción; el resto, pyme. Umbrales en `src/lib/engine/segmento.ts`. |
+| **Segmento de la cuenta** | Corporativo si ≥ 300 empleados o ≥ 18.000 M COP de ingresos; industrial si el sector es fabril, agro o construcción; el resto, pyme. Los umbrales salen de los datos (ver [Cómo se eligieron los umbrales y pesos](#cómo-se-eligieron-los-umbrales-y-pesos)) y están en `src/lib/engine/segmento.ts`. |
 | **Duplicados** | Mismo NIT, o misma razón social ignorando mayúsculas y puntuación. **No** se ignora el sufijo societario: "X S.A.S." y "X Ltda." son empresas distintas. El de menor id es el original. |
 | **Capacidad vacía o 0** | No puede recibir. Se muestra como bandera en la consola. |
 | **Usuario sin zona / equipo inexistente** | Hereda la zona del equipo si la tiene; el equipo 99 inexistente se anula con bandera. |
 | **Líderes** | No reciben por defecto (opción en la consola). |
 | **Ausencia sin fecha de fin** | Se considera abierta (sigue ausente). |
 | **Quien sale** | Un vendedor inactivo conserva sus cuentas hasta que se reasignan; no recibe nuevas. |
+
+## Cómo se eligieron los umbrales y pesos
+
+No se fijaron a ojo: se midieron con [scripts/evaluar.mts](scripts/evaluar.mts) sobre los 71 registros pendientes reales (61 asignables; el resto se retiene).
+
+**Umbral de cuenta corporativa.** Las empresas forman tres grupos claros: hasta 40 empleados (ingresos de 0,3 a 2.400 M COP), de 55 a 260 (hasta 17.700 M) y de 420 a 2.100 empleados (de 18.400 a 119.000 M, mediana de 50.000 a 78.000 M). Entre 260 y 420 no hay ninguna empresa, así que cualquier corte en ese hueco separa igual. Se usa **300 empleados o 18.000 M COP**. El primer valor que tuve (500 empleados) dejaba como "no corporativas" a las de 420 empleados, que son del grupo grande.
+
+**Cómo está hoy la operación** (76 cuentas ya en trabajo, dueño = último movimiento):
+
+| | Hoy |
+|---|---|
+| Cuenta con un experto de su segmento | 29 % |
+| Cuenta con alguien de su zona | 33 % |
+| Cuentas grandes sin experto corporativo | 20 de 30 |
+
+**Resultado de cada método sobre los pendientes:**
+
+| Método | Zona | Con experto de su segmento | En su zona | Grandes con experto corporativo | Desviación de ocupación |
+|---|---|---|---|---|---|
+| Round-robin | estricta | 31 % | 100 % | 3 de 16 | 14,3 pts |
+| Balanceo de carga | estricta | 26 % | 100 % | 4 de 16 | 14,2 pts |
+| Reglas | estricta | 51 % | 100 % | 6 de 16 | 15,1 pts |
+| **Reglas (por defecto)** | preferente | **80 %** | **70 %** | **16 de 16** | **11,7 pts** |
+
+Lo que enseñó la medición:
+- **La zona estricta y las cuentas grandes chocan**: solo hay expertos corporativos en Centro y Costa. Con zona estricta, una cuenta grande de Antioquia u Occidente no puede ir a un experto. Por eso en *reglas* e *IA* la zona es una preferencia y en *balanceo* y *round-robin* es un filtro.
+- **Las cuentas grandes no podían depender de un peso.** Pasaron a ser una regla explícita ("solo compiten expertos corporativos con la antigüedad mínima"), que también ve el modelo de IA.
+- **Pesos por defecto: segmento 30, zona 30, carga 60, antigüedad 10.** Frente al 40/20/30 anterior, las cuentas en su zona suben de 51 % a 70 % y el desbalance baja de 16,9 a 11,7 puntos, a cambio de bajar el encaje de segmento de 100 % a 80 %. Es un compromiso, no una verdad: la consola ofrece los perfiles *Equilibrado*, *Experto primero*, *Zona primero* y *Solo balance*.
+- **Cuentas grandes a vendedores con menos de 90 días: 0** en todas las configuraciones probadas.
+- **El historial no ayuda a calibrar más**: los vendedores expertos en pyme tienen cuentas de hasta 2.100 empleados, es decir, hoy el segmento no se usa para repartir.
 
 ## Cómo correrlo
 
@@ -76,9 +106,10 @@ SUPABASE_SERVICE_ROLE_KEY=                            # solo servidor
 
 | Script | Qué hace |
 |---|---|
-| `npm test` | 19 pruebas del motor (filtros duros, carga, métodos, zona, retención) |
+| `npm test` | 23 pruebas del motor (filtros duros, carga, métodos, zona, retención, duplicados, cuentas grandes) |
 | `npm run seed` / `seed:dry` | Carga los CSV normalizados / solo muestra el resumen |
 | `npm run reset` | Vacía la traza y restaura los datos (útil antes de grabar la demo) |
+| `npx tsx --env-file=.env.local scripts/evaluar.mts [fecha] [--fino]` | Mide cada método frente a cómo está hoy la operación y prueba pesos alternativos (solo lee) |
 | `npx tsx --env-file=.env.local scripts/probar-ia.mts 3` | Prueba el método de IA sin escribir en la traza |
 
 **Despliegue:** Vercel con las 4 variables de entorno. No usar la integración de Supabase de Vercel (crea otra base).
@@ -112,7 +143,8 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 - **Sin autenticación.** `ejecutado_por` lo elige quien usa la consola. Lo siguiente sería login por rol.
 - **La IA es secuencial y con tope por corrida** (10 por defecto, 40 máximo): cada decisión cambia la carga de la siguiente y el plan gratuito de Vercel corta a los 60 s. Para volúmenes grandes habría que mover la IA a una cola.
 - **Sin transacciones reales**: `supabase-js` no las ofrece. Si falla a mitad de una ejecución se revierte lo escrito, pero una función SQL (RPC) sería más robusta.
-- **Los umbrales de segmento y los pesos de las reglas son una propuesta**, no están validados con negocio.
+- **Umbrales y pesos están medidos sobre estos datos, pero no validados con negocio.** El corte entre cuenta grande y mediana sale de un hueco real en los datos; los pesos son una política (experto, zona o balance) que negocio debe elegir. Por eso la consola trae perfiles.
+- **El segmento industrial se deduce solo del sector** (no hay otro dato) y no está respaldado por el historial: ahí no se vio relación entre sector y experto del dueño.
 - **No se evaluó la calidad de la IA contra los métodos deterministas** con métricas; es el siguiente paso natural.
 - **Datos personales en el prompt**: se guarda el prompt completo porque negocio lo pidió; en producción habría que fijar retención y control de acceso a esa tabla.
 

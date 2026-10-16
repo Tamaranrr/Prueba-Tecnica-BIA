@@ -46,13 +46,31 @@ export function balanceoCarga({ elegibles }: EntradaMetodo): Seleccion {
   };
 }
 
+/**
+ * Regla explícita (no un peso): las cuentas grandes son la causa de las peleas, así que solo compiten los
+ * expertos corporativos elegibles y con la antigüedad mínima. Si no queda ninguno, compite cualquiera y se dice.
+ * La usan el método de reglas y el de IA (el modelo solo ve este grupo).
+ */
+export function grupoParaCuenta(seg: string, elegibles: EvaluacionCandidato[], usuarios: Map<number, Usuario>, params: ParametrosMotor) {
+  if (seg !== "corporativo" || !params.grandesSoloExpertos) return { pool: elegibles, nota: "" };
+  const expertos = elegibles.filter((c) => {
+    const u = usuarios.get(c.usuario_id)!;
+    return u.segmento_experto === "corporativo" && (!u.fecha_ingreso || diasEntre(u.fecha_ingreso, params.fechaReferencia) >= params.pesos.diasMinCorporativo);
+  });
+  return expertos.length
+    ? { pool: expertos, nota: "; cuenta corporativa: solo compiten expertos corporativos" }
+    : { pool: elegibles, nota: "; cuenta corporativa sin expertos corporativos disponibles: compite cualquiera" };
+}
+
 /** 3. Reglas de negocio ponderadas: segmento, zona, carga y antigüedad, más restricciones por tamaño/notas. */
 export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo): Seleccion {
   const p = params.pesos;
   const seg = segmentoDe(registro);
   const nota = señalesNota(registro.notas);
   const anotar: NonNullable<Seleccion["anotar"]> = {};
-  const puntuados = elegibles.map((c) => {
+  const { pool, nota: nota_pool } = grupoParaCuenta(seg, elegibles, usuarios, params);
+  for (const c of elegibles) if (!pool.includes(c)) anotar[c.usuario_id] = { puntaje: undefined, desglose: { fuera_del_grupo_de_expertos_corporativos: 0 } };
+  const puntuados = pool.map((c) => {
     const u = usuarios.get(c.usuario_id)!;
     const dias = u.fecha_ingreso ? diasEntre(u.fecha_ingreso, params.fechaReferencia) : 365 * 5; // sin fecha: se asume antiguo
     const anios = dias / 365;
@@ -75,6 +93,6 @@ export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo)
   const notas = [nota.pideSenior && "pide senior", nota.pideConocerSector && "pide conocer el sector"].filter(Boolean);
   const motivo =
     `Reglas: cuenta ${seg}; ${g.puntaje} pts (segmento ${d.segmento}, zona ${d.zona}, carga ${d.carga}, antigüedad ${d.antiguedad})` +
-    (notas.length ? `; la nota (${notas.join(", ")}) se aplicó como restricción` : "") + ".";
+    (notas.length ? `; la nota (${notas.join(", ")}) se aplicó como restricción` : "") + nota_pool + ".";
   return { usuario_id: g.c.usuario_id, motivo, anotar };
 }

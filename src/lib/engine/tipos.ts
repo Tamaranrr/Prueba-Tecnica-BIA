@@ -35,6 +35,8 @@ export interface ParametrosMotor {
   retener: string[];
   /** Pesos del método "reglas". */
   pesos: PesosReglas;
+  /** Método reglas: una cuenta corporativa solo compite entre expertos corporativos elegibles (si hay alguno). */
+  grandesSoloExpertos: boolean;
 }
 export interface PesosReglas {
   segmento: number; zona: number; carga: number; antiguedad: number;
@@ -44,10 +46,26 @@ export interface PesosReglas {
   aniosSenior: number;
 }
 
+/**
+ * Pesos por defecto del método de reglas, elegidos midiendo sobre los pendientes reales (scripts/evaluar.mts):
+ * segmento y zona pesan lo mismo, la carga el doble y la antigüedad solo desempata. Frente a 40/20/30 sube las
+ * cuentas en su zona de 51% a 70% y baja la desviación de ocupación de 16.9 a 11.7 puntos, a cambio de bajar el
+ * encaje de segmento de 100% a 80%. Las cuentas grandes no dependen de estos pesos: ver grandesSoloExpertos.
+ */
+export const PESOS_DEFECTO: PesosReglas = { segmento: 30, zona: 30, carga: 60, antiguedad: 10, diasMinCorporativo: 90, aniosSenior: 2 };
+
+/** Perfiles listos para la consola; todos se pueden ajustar a mano. */
+export const PERFILES_PESOS: { id: string; nombre: string; desc: string; pesos: PesosReglas }[] = [
+  { id: "equilibrado", nombre: "Equilibrado (recomendado)", desc: "Segmento y zona pesan igual; la carga pesa el doble.", pesos: PESOS_DEFECTO },
+  { id: "experto", nombre: "Experto primero", desc: "Prioriza que cada cuenta vaya a un experto de su segmento, aunque quede fuera de zona.", pesos: { ...PESOS_DEFECTO, segmento: 40, zona: 20, carga: 30 } },
+  { id: "zona", nombre: "Zona primero", desc: "Prioriza que la cuenta quede con alguien de su zona.", pesos: { ...PESOS_DEFECTO, segmento: 20, zona: 40, carga: 30 } },
+  { id: "balance", nombre: "Solo balance", desc: "Casi ignora segmento y zona: nivela la carga entre todos.", pesos: { ...PESOS_DEFECTO, segmento: 0, zona: 0, carga: 50 } },
+];
+
 export const PARAMETROS_DEFECTO: Omit<ParametrosMotor, "fechaReferencia"> = {
   zona: "estricta", desbordarSiNoHay: true, incluirLideres: false, estados: ["nuevo"], excluirUsuarios: [],
-  retener: ["duplicado", "pidio_no_insistir"],
-  pesos: { segmento: 40, zona: 20, carga: 30, antiguedad: 10, diasMinCorporativo: 90, aniosSenior: 2 },
+  retener: ["duplicado", "pidio_no_insistir"], grandesSoloExpertos: true,
+  pesos: PESOS_DEFECTO,
 };
 
 /** Resultado de evaluar a un usuario para un registro (queda en la traza). */

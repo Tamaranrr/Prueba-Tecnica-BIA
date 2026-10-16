@@ -43,6 +43,10 @@ test("segmento: grande por empleados o ingresos es corporativo; sector fabril es
   assert.equal(segmentoDe({ empleados: 10, ingresos_estimados: 40_000_000_000, sector: "Retail" }), "corporativo");
   assert.equal(segmentoDe({ empleados: 120, ingresos_estimados: 5_000_000_000, sector: "Textil" }), "industrial");
   assert.equal(segmentoDe({ empleados: null, ingresos_estimados: null, sector: null }), "pyme");
+  // el hueco real de los datos: 260 empleados y 17.700 M es mediana; 420 empleados ya es del grupo grande
+  assert.equal(segmentoDe({ empleados: 260, ingresos_estimados: 17_700_000_000, sector: "Retail" }), "pyme");
+  assert.equal(segmentoDe({ empleados: 420, ingresos_estimados: 29_800_000_000, sector: "Retail" }), "corporativo");
+  assert.equal(segmentoDe({ empleados: 55, ingresos_estimados: 18_476_000_000, sector: "Retail" }), "corporativo");
 });
 
 // ───── filtros duros (valen para los tres métodos) ─────
@@ -179,4 +183,24 @@ test("un nuevo cuyo gemelo ya está en gestión o descartado se retiene; si el g
   assert.deepEqual(res.propuestas.map((p) => p.registro_id).sort((a, b) => a - b), [3, 7]);
   assert.ok(res.retenidos.find((x) => x.registro_id === 1)!.razones[0].startsWith("duplicado_en_en_gestion"));
   assert.equal(todos[0].banderas.length, 0); // no muta lo recibido
+});
+
+// ───── cuentas grandes: regla explícita ─────
+test("reglas: una cuenta corporativa solo compite entre expertos corporativos, aunque otro tenga menos carga", () => {
+  const usuarios = [u(1, { segmento_experto: "pyme" }), u(2, { segmento_experto: "corporativo" })];
+  const res = proponer("reglas", datos(usuarios, [r(1, { empleados: 420 })], { cargaInicial: { 2: 9 } }), parametros(HOY));
+  assert.equal(res.propuestas[0].usuario_id, 2);
+  assert.match(res.propuestas[0].motivo, /solo compiten expertos corporativos/);
+});
+test("reglas: si no hay expertos corporativos disponibles, la cuenta grande la toma otro y queda dicho", () => {
+  const usuarios = [u(1, { segmento_experto: "pyme" }), u(2, { segmento_experto: "corporativo", activo: false })];
+  const res = proponer("reglas", datos(usuarios, [r(1, { empleados: 420 })]), parametros(HOY));
+  assert.equal(res.propuestas[0].usuario_id, 1);
+  assert.match(res.propuestas[0].motivo, /sin expertos corporativos disponibles/);
+});
+test("reglas: la regla de cuentas grandes se puede apagar", () => {
+  const usuarios = [u(1, { segmento_experto: "pyme" }), u(2, { segmento_experto: "corporativo" })];
+  const p = parametros(HOY, { grandesSoloExpertos: false, pesos: { segmento: 0, zona: 0, carga: 60, antiguedad: 0, diasMinCorporativo: 0, aniosSenior: 2 } });
+  const res = proponer("reglas", datos(usuarios, [r(1, { empleados: 420 })], { cargaInicial: { 2: 9 } }), p);
+  assert.equal(res.propuestas[0].usuario_id, 1);
 });

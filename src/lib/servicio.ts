@@ -54,7 +54,8 @@ export function armarLote(base: Base, sol: Solicitud) {
   const fecha = sol.fechaReferencia ?? hoy();
   const duenos = duenosActuales(base.actividad, base.vigentes);
   let lote: Registro[];
-  let extra: Partial<ParametrosMotor> = { ...sol.parametros };
+  // La zona estricta tiene sentido para balancear; en reglas e IA (que pesan el encaje de segmento) la zona es una preferencia.
+  let extra: Partial<ParametrosMotor> = { zona: sol.metodo === "reglas" || sol.metodo === "ia" ? "preferente" : "estricta", ...sol.parametros };
 
   if (sol.alcance.tipo === "pendientes") {
     lote = base.registros.filter((r) => r.estado === "nuevo");

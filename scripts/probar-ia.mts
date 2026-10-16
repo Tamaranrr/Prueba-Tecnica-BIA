@@ -4,7 +4,7 @@ import { proponerIA } from "../src/lib/ia";
 
 const n = Number(process.argv[2] ?? 3);
 const base = await leerTodo();
-const { datos, params } = armarLote(base, { metodo: "ia", alcance: { tipo: "pendientes" }, fechaReferencia: "2026-09-30" });
+const { datos, params } = armarLote(base, { metodo: "ia", alcance: { tipo: "pendientes" }, fechaReferencia: "2026-10-16" });
 const t0 = Date.now();
 const r = await proponerIA(datos, params, n);
 console.log(`${r.propuestas.length} propuestas en ${((Date.now() - t0) / 1000).toFixed(1)}s`);

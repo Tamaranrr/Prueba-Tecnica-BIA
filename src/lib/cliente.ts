@@ -41,7 +41,7 @@ export async function api<T>(ruta: string, cuerpo?: unknown): Promise<T> {
 export const METODOS = [
   { id: "round_robin", nombre: "Round-robin ponderado", desc: "Rota los registros entre los vendedores elegibles; quien tiene más cupo libre recibe más turnos." },
   { id: "balanceo_carga", nombre: "Balanceo de carga", desc: "Cada registro va al vendedor menos ocupado (carga ÷ capacidad). Nivela a los nuevos con los antiguos." },
-  { id: "reglas", nombre: "Reglas de negocio", desc: "Puntúa segmento experto, zona, carga y antigüedad. Las cuentas grandes no van a vendedores nuevos y se respetan las notas (senior, conoce el sector)." },
+  { id: "reglas", nombre: "Reglas de negocio", desc: "Puntúa segmento experto, zona, carga y antigüedad. Las cuentas grandes solo compiten entre expertos corporativos con antigüedad y se respetan las notas (senior, conoce el sector)." },
   { id: "ia", nombre: "Asignación por IA", desc: "Claude lee el registro completo (incluidas las notas) y elige entre los vendedores que ya pasaron los filtros duros. Cada decisión guarda el prompt y la respuesta." },
 ] as const;
 

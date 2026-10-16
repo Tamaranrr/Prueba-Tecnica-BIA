@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { api, METODOS, type Datos, type Preview } from "@/lib/cliente";
-import { PARAMETROS_DEFECTO } from "@/lib/engine/tipos";
+import { PARAMETROS_DEFECTO, PERFILES_PESOS, PESOS_DEFECTO } from "@/lib/engine/tipos";
 import { TablaRegistros } from "./TablaRegistros";
 import { Banderas, Badge, Barra, boton, campo, Tarjeta, Titulo } from "./ui";
 
@@ -28,7 +28,11 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const [desbordar, setDesbordar] = useState(PARAMETROS_DEFECTO.desbordarSiNoHay);
   const [lideres, setLideres] = useState(false);
   const [retener, setRetener] = useState<string[]>(PARAMETROS_DEFECTO.retener);
-  const [pesos, setPesos] = useState({ ...PARAMETROS_DEFECTO.pesos });
+  const [pesos, setPesos] = useState({ ...PESOS_DEFECTO });
+  const [grandesExpertos, setGrandesExpertos] = useState(PARAMETROS_DEFECTO.grandesSoloExpertos);
+  // Balancear funciona con zona estricta; reglas e IA pesan el encaje de segmento y tratan la zona como preferencia.
+  const elegirMetodo = (id: string) => { setMetodo(id); setZona(id === "reglas" || id === "ia" ? "preferente" : "estricta"); };
+  const perfilActual = PERFILES_PESOS.find((p) => (Object.keys(p.pesos) as (keyof typeof pesos)[]).every((k) => p.pesos[k] === pesos[k]))?.id ?? "personalizado";
   const [limiteIA, setLimiteIA] = useState(10);
   const [prev, setPrev] = useState<Preview | null>(null);
   const [prevSol, setPrevSol] = useState<string | null>(null); // configuración exacta con la que se previsualizó
@@ -46,7 +50,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
     alcance: alcance === "pendientes" ? { tipo: "pendientes" }
       : alcance === "seleccion" ? { tipo: "registros", ids: [...seleccion].sort((a, b) => a - b) }
       : { tipo: "usuario", usuario_id: origen },
-    parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos },
+    parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos, grandesSoloExpertos: grandesExpertos },
   });
   const listoParaCorrer = alcance === "pendientes" || (alcance === "seleccion" && seleccion.size > 0) || (alcance === "usuario" && origen !== "");
   // Si cambia cualquier ajuste después de previsualizar, lo que se vería ya no es lo que se ejecutaría.
@@ -100,7 +104,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
           <div className="space-y-2">
             {METODOS.map((m) => (
               <label key={m.id} className={`block cursor-pointer rounded border p-2.5 text-sm ${metodo === m.id ? "border-indigo-600 bg-indigo-50" : "border-slate-200 hover:bg-slate-50"}`}>
-                <input type="radio" className="mr-2" checked={metodo === m.id} onChange={() => setMetodo(m.id)} /><b>{m.nombre}</b>
+                <input type="radio" className="mr-2" checked={metodo === m.id} onChange={() => elegirMetodo(m.id)} /><b>{m.nombre}</b>
                 <p className="mt-1 text-xs text-slate-600">{m.desc}</p>
               </label>
             ))}
@@ -131,7 +135,14 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
           ))}
           {metodo === "reglas" && (
             <div className="mt-3 border-t border-slate-200 pt-3">
-              <p className="mb-1 text-sm text-slate-700">Pesos de las reglas</p>
+              <p className="mb-1 text-sm text-slate-700">Perfil de pesos</p>
+              <select aria-label="Perfil de pesos" className={`${campo} mb-1 w-full`} value={perfilActual} onChange={(e) => { const p = PERFILES_PESOS.find((x) => x.id === e.target.value); if (p) setPesos({ ...p.pesos }); }}>
+                {PERFILES_PESOS.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                {perfilActual === "personalizado" && <option value="personalizado">Personalizado</option>}
+              </select>
+              <p className="mb-2 text-xs text-slate-500">{PERFILES_PESOS.find((p) => p.id === perfilActual)?.desc ?? "Pesos ajustados a mano."}</p>
+              <label className="mb-2 flex gap-2 text-sm text-slate-700" title="Las cuentas corporativas solo compiten entre expertos corporativos con la antigüedad mínima.">
+                <input type="checkbox" checked={grandesExpertos} onChange={(e) => setGrandesExpertos(e.target.checked)} />Cuentas grandes solo a expertos corporativos</label>
               {PESOS.map((p) => (
                 <label key={p.id} className="mb-1 flex items-center justify-between gap-2 text-sm text-slate-600">{p.nombre}
                   <input type="number" min={0} max={100} className={`${campo} w-20`} value={pesos[p.id]} onChange={(e) => setPesos({ ...pesos, [p.id]: Number(e.target.value) })} /></label>
