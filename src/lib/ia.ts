@@ -5,6 +5,7 @@ import { diasEntre } from "./engine/filtros";
 import { balanceoCarga, grupoParaCuenta } from "./engine/metodos";
 import { cerrarPropuesta, evaluarRegistro, prepararLote, type DatosMotor } from "./engine/motor";
 import { descripcionSenales } from "./engine/senales";
+import { segmentoDe } from "./engine/segmento";
 import type { EvaluacionCandidato, ParametrosMotor, PesosReglas, Propuesta, Registro, ResultadoMotor, Usuario } from "./engine/tipos";
 import { ErrorNegocio } from "./db";
 
@@ -18,14 +19,14 @@ const Respuesta = z.object({
 });
 
 /** Versión del prompt: queda en los parámetros de cada ejecución para poder comparar corridas. */
-export const PROMPT_VERSION = "v3";
+export const PROMPT_VERSION = "v4";
 
 /**
  * Prompt de sistema. La política (cuánto pesa cada criterio) sale de los mismos pesos del método de reglas, así el
  * modelo y las reglas persiguen lo mismo y se pueden comparar. v1 ordenaba los criterios por importancia y el modelo
  * ponía el segmento por encima de todo, lo que concentraba las cuentas grandes en una sola persona.
  */
-export function construirSistema(p: PesosReglas) {
+export function construirSistema(p: PesosReglas, topeGrandes = 8) {
   return `Eres el asistente de asignación comercial de una empresa de ventas B2B en Colombia.
 Tu tarea: decidir a qué vendedor se le asigna UNA empresa nueva, eligiendo SOLO entre los candidatos que se te listan.
 Los candidatos ya pasaron los filtros duros (activo, sin ausencia, con cupo y, en cuentas grandes, experto corporativo). No puedes proponer a nadie fuera de la lista.
@@ -34,8 +35,11 @@ Puntúa mentalmente a cada candidato con estos criterios y elige el de mayor tot
 - Carga (hasta ${p.carga} puntos): el menos ocupado (carga ÷ capacidad) recibe todos los puntos; al más ocupado, casi ninguno; reparte el resto en proporción. Evita concentrar cuentas en una sola persona.
 - Segmento (${p.segmento} puntos): si el vendedor es experto en el segmento calculado de la cuenta; 0 si no lo es.
 - Zona (${p.zona} puntos): si el vendedor es de la misma zona que el registro; 0 si no lo es.
-- Antigüedad (hasta ${p.antiguedad} puntos): sirve solo para desempatar; más años, más puntos.
+- Antigüedad por nivel (hasta ${p.antiguedad} puntos). Niveles: rampa (menos de 6 meses), junior (menos de 2 años), pleno (menos de 4) y senior (4 o más). En cuentas exigentes (corporativas, urgentes o que piden senior) gana más puntos el nivel más alto: senior, pleno, junior, rampa. En cuentas pyme o de poca prioridad ocurre lo contrario: gana más quien tiene menos nivel, para que los nuevos se nivelen. En el resto, la mitad de los puntos para todos.
+- Balance de cuentas grandes (hasta ${p.cartera} puntos, solo si la cuenta es corporativa): gana todos los puntos quien no tiene cuentas corporativas en su cartera y ninguno quien ya tiene ${topeGrandes} o más; reparte el resto en proporción. Las cuentas grandes no se concentran en una sola persona.
 Los puntos de segmento y zona no se compensan con un poco de carga: si la diferencia de carga es pequeña, gana quien sume más por segmento y zona.
+
+De cada candidato recibes su cartera actual: cuántas cuentas tiene, de qué segmentos, cuántas son corporativas, los ingresos que suman, cuántas acciones hizo en los últimos 14 días, hace cuántos días se movió por última vez y cuántas cuentas tiene frías (sin movimiento en 30 días o más). Úsala para no concentrar ingresos ni cuentas grandes en una persona y para preferir a quien está activo. La cartera ya incluye lo que se asignó antes en esta misma corrida. Un vendedor marcado como capacidad provisional es un recién entrado que se está nivelando.
 
 Las notas del registro son un criterio aparte y pesan más que los puntos cuando piden algo concreto. Si el registro trae "lectura previa de la nota", son señales ya extraídas de ese texto: úsalas junto con la nota. Necesidad industrial: favorece a un experto industrial si la cuenta no es corporativa. Urgencia baja: la cuenta es poco prioritaria, conviene darla a un vendedor con menos antigüedad para que gane ritmo. Si piden "alguien senior", elige a un vendedor con ${p.aniosSenior} años o más; si piden "alguien que conozca el sector", elige a un experto en el segmento de la cuenta. Si no piden nada accionable (horarios, historia, avisos), no cambian la decisión, pero menciónalas en la razón cuando sean relevantes.
 
@@ -57,7 +61,12 @@ export function construirMensaje(r: Registro, segmento: string, cands: Evaluacio
   ].join("\n");
   const lista = cands.map((c) => {
     const u = usuarios.get(c.usuario_id)!;
-    return `- id ${u.id} | ${u.nombre} | zona ${u.zona ?? "?"} | experto en ${u.segmento_experto ?? "sin especialidad"} | antigüedad ${edad(u, fecha)} | carga ${c.carga}/${c.capacidad} (${Math.round((c.carga / (c.capacidad as number)) * 100)}%)`;
+    const k = c.cartera;
+    const nivel = k ? `${k.nivel}${k.antiguedadEstimada ? ", antigüedad estimada" : ""}` : "?";
+    const cartera = k
+      ? `cartera: ${k.cuentas} cuentas (${k.corporativo} corporativas, ${k.industrial} industriales, ${k.pyme} pyme), ingresos que suman ${(k.ingresos / 1e9).toFixed(1)} mil millones COP, ${k.acciones14d} acciones en 14 días, ${k.diasDesdeUltima === null ? "sin actividad registrada" : `última actividad hace ${k.diasDesdeUltima} días`}, ${k.frias} cuentas frías`
+      : "cartera: sin dato";
+    return `- id ${u.id} | ${u.nombre} | zona ${u.zona ?? "?"} | experto en ${u.segmento_experto ?? "sin especialidad"} | antigüedad ${edad(u, fecha)} (nivel ${nivel}) | carga ${c.carga}/${c.capacidad}${c.capacidad_provisional ? " (capacidad provisional de recién entrado)" : ""} (${Math.round((c.carga / (c.capacidad as number)) * 100)}%) | ${cartera}`;
   }).join("\n");
   return `Fecha de hoy: ${fecha}\n\n<registro>\n${reg}\n</registro>\n\n<candidatos>\n${lista}\n</candidatos>\n\nElige al vendedor para este registro.`;
 }
@@ -89,7 +98,7 @@ export async function proponerIA(
   d: DatosMotor, params: ParametrosMotor, limite: number, alAvanzar?: (hechos: number, total: number) => void,
 ): Promise<ResultadoMotor & { sin_procesar: number; uso: { entrada: number; salida: number; llamadas: number } }> {
   if (!process.env.ANTHROPIC_API_KEY) throw new ErrorNegocio("Falta ANTHROPIC_API_KEY en el servidor: no se puede usar el método de IA.");
-  const { carga, usuarios, ctx, retenidos, porAsignar } = prepararLote("ia", d, params);
+  const { carga, usuarios, ctx, perfiles, retenidos, porAsignar } = prepararLote("ia", d, params);
   const lote = porAsignar.slice(0, limite);
   const propuestas: Propuesta[] = [];
   const uso = { entrada: 0, salida: 0, llamadas: 0 };
@@ -98,13 +107,13 @@ export async function proponerIA(
   for (const r of lote) {
     const { evals, desborde } = evaluarRegistro(r, d, ctx);
     // Mismo grupo que ve el método de reglas: las cuentas grandes solo se le muestran al modelo con expertos corporativos.
-    const seg0 = cerrarPropuesta(r, evals, desborde, null, {}).segmento;
+    const seg0 = segmentoDe(r);
     const { pool: elegibles, nota: notaGrupo } = grupoParaCuenta(seg0, evals.filter((e) => e.elegible), usuarios, params);
-    if (!elegibles.length) { propuestas.push(cerrarPropuesta(r, evals, desborde, null, carga)); continue; }
+    if (!elegibles.length) { propuestas.push(cerrarPropuesta(r, evals, desborde, null, carga, {}, perfiles)); continue; }
 
     const seg = seg0;
     const mensaje = construirMensaje(r, seg, elegibles, usuarios, params.fechaReferencia);
-    const sistema = construirSistema(params.pesos);
+    const sistema = construirSistema(params.pesos, params.topeGrandes);
     const prompt = `[SYSTEM]\n${sistema}\n\n[USER]\n${mensaje}`;
     let eleccion: Eleccion | null = null;
     let fallo = "";
@@ -128,12 +137,12 @@ export async function proponerIA(
 
     if (eleccion) {
       const sel = { usuario_id: eleccion.usuario_id, motivo: `IA (${MODELO_IA}): ${eleccion.razon}${notaGrupo ? ` [${notaGrupo.replace(/^; /, "")}]` : ""}` };
-      propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga, { prompt_enviado: eleccion.prompt, respuesta_modelo: eleccion.cruda, modelo: MODELO_IA }));
+      propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga, { prompt_enviado: eleccion.prompt, respuesta_modelo: eleccion.cruda, modelo: MODELO_IA }, perfiles));
     } else {
       // Respaldo determinista: nunca dejamos un registro colgado por un fallo del modelo.
       const sel = balanceoCarga({ registro: r, elegibles, usuarios, params, estado: { pesosRR: {} } });
       const p = cerrarPropuesta(r, evals, desborde, { ...sel, motivo: `Respaldo por balanceo de carga: ${fallo}. ${sel.motivo}` }, carga,
-        { prompt_enviado: prompt, respuesta_modelo: cruda, modelo: MODELO_IA });
+        { prompt_enviado: prompt, respuesta_modelo: cruda, modelo: MODELO_IA }, perfiles);
       p.banderas_decision.push("ia_respaldo");
       propuestas.push(p);
     }

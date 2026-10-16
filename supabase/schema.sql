@@ -46,7 +46,8 @@ create table registros (
   zona               text,
   fuente             text not null,
   notas              text,
-  estado             text not null check (estado in ('nuevo','asignado','en_gestion','descartado')),
+  -- autoasignado = lo asignó el motor; asignado = ya venía asignado por una persona
+  estado             text not null check (estado in ('nuevo','autoasignado','asignado','en_gestion','descartado')),
   fecha_creacion     date not null,
   duplicado_de       int references registros(id),  -- id del registro "original" si es duplicado
   banderas           text[] not null default '{}',
@@ -150,3 +151,9 @@ alter table notas_senales enable row level security;
 -- ───────────── Ingreso a la consola ─────────────
 -- Seguro de correr en una base que ya tiene datos: solo agrega la columna.
 alter table usuarios add column if not exists clave_hash text;
+
+-- ───────────── Estado "autoasignado" ─────────────
+-- Seguro de correr en una base que ya tiene datos: solo reemplaza la restricción del estado.
+alter table registros drop constraint if exists registros_estado_check;
+alter table registros add constraint registros_estado_check
+  check (estado in ('nuevo','autoasignado','asignado','en_gestion','descartado'));

@@ -5,6 +5,11 @@ export type { SenalesNota };
 
 export type Zona = "Centro" | "Costa" | "Occidente" | "Antioquia";
 export type Segmento = "corporativo" | "pyme" | "industrial";
+export type Nivel = "rampa" | "junior" | "pleno" | "senior";
+
+/** Estados de un registro que ya tiene trabajo encima y por eso cuenta como cartera viva de alguien. */
+export const ESTADOS_VIVOS = ["asignado", "autoasignado", "en_gestion"] as const;
+export const esVivo = (estado: string) => (ESTADOS_VIVOS as readonly string[]).includes(estado);
 
 export interface Usuario {
   id: number; nombre: string; rol: "admin" | "lider" | "vendedor"; equipo_id: number | null;
@@ -17,6 +22,8 @@ export interface Registro {
   notas: string | null; estado: string; fecha_creacion: string; duplicado_de: number | null; banderas: string[];
   /** Lectura de la nota hecha por IA (si se pidió y estuvo disponible). El motor la trata como un dato más. */
   senales?: SenalesNota;
+  /** Dueño actual cuando el registro ya tiene trabajo encima (lo pone el servicio). Nadie puede recibir su propio registro. */
+  dueno_actual?: number | null;
 }
 export interface Ausencia { id: number; usuario_id: number; desde: string; hasta: string | null; motivo: string }
 export interface Actividad { id: number; registro_id: number; usuario_id: number; tipo: string; fecha: string }
@@ -34,7 +41,7 @@ export interface ParametrosMotor {
   incluirLideres: boolean;
   /** Estados de registro que se pueden repartir. Por defecto solo "nuevo"; al reasignar se amplía. */
   estados: string[];
-  /** Usuarios que no pueden recibir en este lote (ej. el que se reasigna o quien se va). */
+  /** Usuarios que no pueden recibir en ningún registro de este lote. */
   excluirUsuarios: number[];
   /** Registros con estas banderas no se asignan: quedan retenidos para revisión. */
   retener: string[];
@@ -44,10 +51,22 @@ export interface ParametrosMotor {
   grandesSoloExpertos: boolean;
   /** Usa la lectura de las notas: atiende primero lo urgente y aplica perfil senior, sector y necesidad industrial. */
   usarNotasIA: boolean;
+  /** No se dan cuentas nuevas a quien se ausenta dentro de estos días (0 = solo se filtra a quien ya está ausente). */
+  ventanaAusenciaDias: number;
+  /** Capacidad provisional de un vendedor en rampa con capacidad 0 (recién entrado). 0 = no se aplica y queda excluido. */
+  capacidadRampa: number;
+  /** Un vendedor en rampa solo recibe cuentas pyme (pequeñas). */
+  rampaSoloPyme: boolean;
+  /** Orden de reparto por segmento: quien va primero elige primero. */
+  ordenSegmentos: Segmento[];
+  /** Referencia de cuentas corporativas por vendedor: sobre este número ya no suma puntos de balance. */
+  topeGrandes: number;
 }
 export interface PesosReglas {
   segmento: number; zona: number; carga: number; antiguedad: number;
-  /** Días de antigüedad mínimos para recibir cuentas corporativas. */
+  /** Balance de cuentas grandes: favorece a quien tiene menos cuentas corporativas en cartera. */
+  cartera: number;
+  /** Días de antigüedad mínimos para recibir cuentas corporativas (730 = nivel pleno). */
   diasMinCorporativo: number;
   /** Años de antigüedad mínimos cuando la nota pide "alguien senior". */
   aniosSenior: number;
@@ -55,11 +74,11 @@ export interface PesosReglas {
 
 /**
  * Pesos por defecto del método de reglas, elegidos midiendo sobre los pendientes reales (scripts/evaluar.mts):
- * segmento y zona pesan lo mismo, la carga el doble y la antigüedad solo desempata. Frente a 40/20/30 sube las
- * cuentas en su zona de 51% a 70% y baja la desviación de ocupación de 16.9 a 11.7 puntos, a cambio de bajar el
- * encaje de segmento de 100% a 80%. Las cuentas grandes no dependen de estos pesos: ver grandesSoloExpertos.
+ * segmento y zona pesan lo mismo y la carga el doble. La antigüedad y el balance de cuentas grandes pesan 20 cada uno:
+ * ya no solo desempatan, porque el caso exige cuidar a los recién entrados y repartir las cuentas grandes entre varios.
+ * Las cuentas grandes tampoco dependen de estos pesos: ver grandesSoloExpertos.
  */
-export const PESOS_DEFECTO: PesosReglas = { segmento: 30, zona: 30, carga: 60, antiguedad: 10, diasMinCorporativo: 90, aniosSenior: 2 };
+export const PESOS_DEFECTO: PesosReglas = { segmento: 30, zona: 30, carga: 60, antiguedad: 20, cartera: 20, diasMinCorporativo: 730, aniosSenior: 2 };
 
 /** Perfiles listos para la consola; todos se pueden ajustar a mano. */
 export const PERFILES_PESOS: { id: string; nombre: string; desc: string; pesos: PesosReglas }[] = [
@@ -72,8 +91,17 @@ export const PERFILES_PESOS: { id: string; nombre: string; desc: string; pesos: 
 export const PARAMETROS_DEFECTO: Omit<ParametrosMotor, "fechaReferencia"> = {
   zona: "estricta", desbordarSiNoHay: true, incluirLideres: false, estados: ["nuevo"], excluirUsuarios: [],
   retener: ["duplicado", "pidio_no_insistir"], grandesSoloExpertos: true, usarNotasIA: true,
+  ventanaAusenciaDias: 7, capacidadRampa: 10, rampaSoloPyme: true,
+  ordenSegmentos: ["corporativo", "industrial", "pyme"], topeGrandes: 8,
   pesos: PESOS_DEFECTO,
 };
+
+/** Cartera de un vendedor en el momento de decidir; queda en la traza. */
+export interface ResumenCartera {
+  nivel: Nivel; antiguedadDias: number | null; antiguedadEstimada: boolean;
+  cuentas: number; corporativo: number; industrial: number; pyme: number; ingresos: number;
+  acciones14d: number; diasDesdeUltima: number | null; frias: number;
+}
 
 /** Resultado de evaluar a un usuario para un registro (queda en la traza). */
 export interface EvaluacionCandidato {
@@ -82,6 +110,9 @@ export interface EvaluacionCandidato {
   descartes: string[];                       // por qué NO era elegible
   puntaje?: number; desglose?: Record<string, number>;
   carga: number; capacidad: number | null;
+  /** true si la capacidad es la provisional de un recién entrado (su capacidad real está en 0). */
+  capacidad_provisional?: boolean;
+  cartera?: ResumenCartera;
 }
 export interface Propuesta {
   registro_id: number;

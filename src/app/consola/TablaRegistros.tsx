@@ -23,7 +23,7 @@ const COLUMNAS: { id: Clave; titulo: string; alinear?: "right" }[] = [
   { id: "espera", titulo: "Espera", alinear: "right" }, { id: "estado", titulo: "Estado" },
 ];
 
-interface Filtros { q: string; estado: string; zona: string; segmento: string; fuente: string; dueno: string; alerta: string; espera: string }
+export interface Filtros { q: string; estado: string; zona: string; segmento: string; fuente: string; dueno: string; alerta: string; espera: string }
 const VACIOS: Filtros = { q: "", estado: "", zona: "", segmento: "", fuente: "", dueno: "", alerta: "", espera: "" };
 
 /** Días que lleva esperando un registro nuevo (null si ya tiene trabajo encima). */

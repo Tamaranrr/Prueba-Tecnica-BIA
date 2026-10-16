@@ -58,7 +58,7 @@ for (const m of ["round_robin", "balanceo_carga", "reglas"] as const) fila(m, me
 console.log(`\nSENSIBILIDAD DE PESOS (reglas, zona preferente), ordenado por segmento+zona, luego desviación`);
 const filas: { n: string; m: ReturnType<typeof metricas> }[] = [];
 for (const segmento of [0, 20, 40, 60]) for (const zonaP of [0, 20, 40]) for (const carga of [10, 30, 50]) {
-  const m = metricas(correr("reglas", { zona: "preferente", pesos: { segmento, zona: zonaP, carga, antiguedad: 10, diasMinCorporativo: 90, aniosSenior: 2 } }));
+  const m = metricas(correr("reglas", { zona: "preferente", pesos: { segmento, zona: zonaP, carga, antiguedad: 10, cartera: 0, diasMinCorporativo: 90, aniosSenior: 2 } }));
   filas.push({ n: `seg ${segmento} zona ${zonaP} carga ${carga}`, m });
 }
 filas.sort((a, b) => (b.m.segmento + b.m.zona) - (a.m.segmento + a.m.zona) || a.m.desv - b.m.desv);
@@ -72,7 +72,7 @@ if (process.argv.includes("--fino")) {
 BÚSQUEDA FINA (zona preferente, grandes solo con expertos corporativos)`);
   const todas: { n: string; m: ReturnType<typeof metricas> }[] = [];
   for (const segmento of [10, 20, 30, 40, 50]) for (const zonaP of [10, 20, 30, 40, 50]) for (const carga of [20, 30, 40, 50, 60]) {
-    const m = metricas(correr("reglas", { zona: "preferente", pesos: { segmento, zona: zonaP, carga, antiguedad: 10, diasMinCorporativo: 90, aniosSenior: 2 } }));
+    const m = metricas(correr("reglas", { zona: "preferente", pesos: { segmento, zona: zonaP, carga, antiguedad: 10, cartera: 0, diasMinCorporativo: 90, aniosSenior: 2 } }));
     todas.push({ n: `seg ${segmento} zona ${zonaP} carga ${carga}`, m });
   }
   todas.sort((a, b) => (b.m.segmento + b.m.zona) - (a.m.segmento + a.m.zona) || a.m.desv - b.m.desv);

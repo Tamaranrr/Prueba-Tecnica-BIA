@@ -1,4 +1,5 @@
-import { evaluarCandidato, type ContextoFiltros } from "./filtros";
+import { clonarPerfiles, perfilVacio, type PerfilVendedor } from "./cartera";
+import { contextoRegistro, evaluarCandidato, type ContextoFiltros } from "./filtros";
 import { balanceoCarga, reglas, roundRobin, type EstadoLote, type Seleccion } from "./metodos";
 import { segmentoDe, tamano } from "./segmento";
 import {
@@ -12,6 +13,8 @@ export interface DatosMotor {
   ausencias: Ausencia[];
   /** Carga actual por usuario (ver calcularCarga). */
   cargaInicial: Record<number, number>;
+  /** Cartera actual de cada vendedor (ver calcularPerfiles). Si falta, se parte de cartera vacía. */
+  perfiles?: Record<number, PerfilVendedor>;
 }
 
 export function parametros(fechaReferencia: string, parcial: Partial<ParametrosMotor> = {}): ParametrosMotor {
@@ -33,10 +36,11 @@ export function razonesRetencion(r: Registro, params: ParametrosMotor): string[]
 
 /** Evalúa a todos los usuarios para un registro y aplica el desborde de zona si hace falta. */
 export function evaluarRegistro(r: Registro, d: DatosMotor, ctx: ContextoFiltros) {
-  let evals = d.usuarios.map((u) => evaluarCandidato(u, r, ctx));
+  const reg = contextoRegistro(r);
+  let evals = d.usuarios.map((u) => evaluarCandidato(u, reg, ctx));
   let desborde = false;
   if (!evals.some((e) => e.elegible) && ctx.params.zona === "estricta" && ctx.params.desbordarSiNoHay) {
-    const alt = d.usuarios.map((u) => evaluarCandidato(u, r, ctx, true));
+    const alt = d.usuarios.map((u) => evaluarCandidato(u, reg, ctx, true));
     if (alt.some((e) => e.elegible)) { evals = alt; desborde = true; }
   }
   return { evals, desborde };
@@ -46,9 +50,13 @@ const SELECTORES = { round_robin: roundRobin, balanceo_carga: balanceoCarga, reg
 
 /** Separa retenidos de asignables y ordena el lote. Común a los métodos deterministas y al de IA. */
 export function prepararLote(metodo: Metodo, d: DatosMotor, params: ParametrosMotor) {
+  void metodo;
   const carga: Record<number, number> = { ...d.cargaInicial };
   const usuarios = new Map(d.usuarios.map((u) => [u.id, u]));
-  const ctx: ContextoFiltros = { ausencias: d.ausencias, carga, params };
+  // Cartera de cada vendedor: la actual, que el motor va actualizando a medida que reparte (copia propia).
+  const perfiles = clonarPerfiles(d.perfiles ?? {});
+  for (const u of d.usuarios) perfiles[u.id] ??= perfilVacio(u, params.fechaReferencia);
+  const ctx: ContextoFiltros = { ausencias: d.ausencias, carga, params, perfiles };
   const retenidos: Retenido[] = [];
   const porAsignar: Registro[] = [];
   for (const r of d.registros) {
@@ -56,24 +64,29 @@ export function prepararLote(metodo: Metodo, d: DatosMotor, params: ParametrosMo
     if (razones.length) retenidos.push({ registro_id: r.id, razones });
     else porAsignar.push(r);
   }
-  // FIFO (el que más lleva esperando primero); en reglas las cuentas grandes van antes.
-  // Con la lectura de notas, lo urgente se atiende primero: quien llega antes elige mejor y no queda esperando.
-  const rango = (r: Registro) => (params.usarNotasIA ? ({ alta: 0, normal: 1, baja: 2 }[r.senales?.urgencia ?? "normal"]) : 1);
+  // Orden de reparto: quien va primero elige primero. Primero el segmento (por defecto corporativo, industrial, pyme),
+  // dentro de él lo urgente según la lectura de la nota, luego el que más lleva esperando y por último el que más pesa.
+  const ordenSegmento = (r: Registro) => { const i = params.ordenSegmentos.indexOf(segmentoDe(r)); return i < 0 ? params.ordenSegmentos.length : i; };
+  const urgencia = (r: Registro) => (params.usarNotasIA ? ({ alta: 0, normal: 1, baja: 2 }[r.senales?.urgencia ?? "normal"]) : 1);
   porAsignar.sort((a, b) =>
-    rango(a) - rango(b) || (metodo === "reglas" ? tamano(b) - tamano(a) : 0) || a.fecha_creacion.localeCompare(b.fecha_creacion) || a.id - b.id);
-  return { carga, usuarios, ctx, retenidos, porAsignar };
+    ordenSegmento(a) - ordenSegmento(b) || urgencia(a) - urgencia(b) || a.fecha_creacion.localeCompare(b.fecha_creacion) ||
+    tamano(b) - tamano(a) || a.id - b.id);
+  return { carga, usuarios, ctx, perfiles, retenidos, porAsignar };
 }
 
-/** Arma la propuesta de un registro y actualiza la carga del lote si hubo elegido. */
+/** Arma la propuesta de un registro y actualiza la carga y la cartera del lote si hubo elegido. */
 export function cerrarPropuesta(
   r: Registro, evals: EvaluacionCandidato[], desborde: boolean, sel: Seleccion | null, carga: Record<number, number>,
-  extra: Partial<Propuesta> = {},
+  extra: Partial<Propuesta> = {}, perfiles?: Record<number, PerfilVendedor>,
 ): Propuesta {
-  const base = { registro_id: r.id, segmento: segmentoDe(r), banderas_decision: desborde ? ["desborde_zona"] : [], senales: r.senales };
+  const segmento = segmentoDe(r);
+  const base = { registro_id: r.id, segmento, banderas_decision: desborde ? ["desborde_zona"] : [], senales: r.senales };
   if (!sel) {
     return { ...base, usuario_id: null, candidatos: evals, motivo: "Sin candidato elegible: todos descartados por los filtros duros.", ...extra };
   }
   carga[sel.usuario_id] = (carga[sel.usuario_id] ?? 0) + 1;
+  const p = perfiles?.[sel.usuario_id];
+  if (p) { p.cuentas++; p[segmento]++; p.ingresos += r.ingresos_estimados ?? 0; }
   return {
     ...base, usuario_id: sel.usuario_id, candidatos: evals.map((e) => ({ ...e, ...sel.anotar?.[e.usuario_id] })),
     motivo: sel.motivo + (desborde ? ` Sin candidatos en la zona ${r.zona}: se desbordó a otras zonas.` : ""), ...extra,
@@ -82,14 +95,14 @@ export function cerrarPropuesta(
 
 /** Reparte un lote con un método determinista. Puro: no escribe en ninguna parte. */
 export function proponer(metodo: Exclude<Metodo, "ia">, d: DatosMotor, params: ParametrosMotor): ResultadoMotor {
-  const { carga, usuarios, ctx, retenidos, porAsignar } = prepararLote(metodo, d, params);
+  const { carga, usuarios, ctx, perfiles, retenidos, porAsignar } = prepararLote(metodo, d, params);
   const estado: EstadoLote = { pesosRR: {} };
   const propuestas: Propuesta[] = [];
   for (const r of porAsignar) {
     const { evals, desborde } = evaluarRegistro(r, d, ctx);
     const elegibles = evals.filter((e) => e.elegible);
     const sel = elegibles.length ? SELECTORES[metodo]({ registro: r, elegibles, usuarios, params, estado }) : null;
-    propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga));
+    propuestas.push(cerrarPropuesta(r, evals, desborde, sel, carga, {}, perfiles));
   }
   return { metodo, parametros: params, propuestas, retenidos, cargaFinal: carga };
 }

@@ -1,10 +1,5 @@
-import type { Actividad, Registro } from "./tipos";
+import { esVivo, type Actividad, type Registro } from "./tipos";
 
-/**
- * Carga actual por usuario: registros en estado asignado/en_gestion cuyo dueño es el
- * usuario de su última actividad (por fecha, desempate por id).
- * `asignacionesVigentes` (traza propia del motor) manda sobre la actividad histórica.
- */
 /** Dueño actual de cada registro: asignación vigente del motor, o si no, el usuario de su última actividad. */
 export function duenosActuales(
   actividad: Actividad[],
@@ -18,7 +13,7 @@ export function duenosActuales(
 }
 
 /**
- * Carga actual por usuario: registros en estado asignado/en_gestion cuyo dueño es el
+ * Carga actual por usuario: registros vivos (asignado, autoasignado o en gestión) cuyo dueño es el
  * usuario de su última actividad (por fecha, desempate por id).
  * `asignacionesVigentes` (traza propia del motor) manda sobre la actividad histórica.
  */
@@ -30,7 +25,7 @@ export function calcularCarga(
   const dueno = duenosActuales(actividad, asignacionesVigentes);
   const carga: Record<number, number> = {};
   for (const r of registros) {
-    if (r.estado !== "asignado" && r.estado !== "en_gestion") continue;
+    if (!esVivo(r.estado)) continue;
     const u = dueno.get(r.id);
     if (u !== undefined) carga[u] = (carga[u] ?? 0) + 1;
   }

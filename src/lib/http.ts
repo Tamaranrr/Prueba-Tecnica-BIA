@@ -25,7 +25,8 @@ export function validarSolicitud(b: Record<string, unknown>): Solicitud {
   if (a.tipo === "pendientes") alcance = { tipo: "pendientes" };
   else if (a.tipo === "usuario" && Number.isInteger(a.usuario_id)) alcance = { tipo: "usuario", usuario_id: a.usuario_id as number };
   else if (a.tipo === "registros" && Array.isArray(a.ids) && a.ids.length && a.ids.every(Number.isInteger)) alcance = { tipo: "registros", ids: a.ids as number[] };
-  else throw new ErrorNegocio("Alcance inválido: use pendientes, usuario{usuario_id} o registros{ids}.");
+  else if (a.tipo === "frias") alcance = { tipo: "frias", dias: Number.isInteger((a as { dias?: unknown }).dias) ? ((a as { dias: number }).dias) : undefined };
+  else throw new ErrorNegocio("Alcance inválido: use pendientes, usuario{usuario_id}, registros{ids} o frias{dias}.");
   const f = b.fechaReferencia;
   if (f !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(f))) throw new ErrorNegocio("fechaReferencia debe ser AAAA-MM-DD.");
   return { metodo: b.metodo as Solicitud["metodo"], alcance, parametros: (b.parametros ?? {}) as Solicitud["parametros"], ia: b.ia as Solicitud["ia"], fechaReferencia: f as string | undefined };

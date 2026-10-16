@@ -6,18 +6,19 @@ const SECTORES_INDUSTRIALES = new Set([
 ]);
 
 /**
- * Umbrales de "cuenta corporativa". Salen de los datos, no de una intuición: en los 167 registros las empresas
- * forman tres grupos claros. Hasta 260 empleados, sus ingresos nunca pasan de 17.700 M COP; desde 420 empleados
- * (420, 650, 900, 1400, 2100) están entre 18.400 y 119.000 M, con mediana de 50.000 a 78.000 M. No hay empresas
- * entre 260 y 420 empleados, así que cualquier corte en ese hueco separa igual. Se usa 300 y 18.000 M COP.
- * (El umbral anterior, 500 empleados, dejaba fuera como "no corporativas" las 420 empleados, que son del grupo grande.)
- * Son parámetros de negocio: si cambia la definición de cuenta grande, se cambian aquí.
+ * Cuenta corporativa: la define el INGRESO que representa (18.000 M COP o más). El tamaño solo se usa cuando falta
+ * el ingreso (300 empleados o más). En los 167 registros los dos criterios coinciden: hasta 260 empleados los ingresos
+ * nunca pasan de 17.700 M, y desde 420 empleados están entre 18.400 y 119.000 M; entre 260 y 420 no hay empresas.
+ * Si ambos datos existen y se contradicen, manda el ingreso. Son parámetros de negocio: se cambian aquí.
  */
-export const UMBRAL_CORPORATIVO = { empleados: 300, ingresos: 18_000_000_000 } as const;
+export const UMBRAL_CORPORATIVO = { ingresos: 18_000_000_000, empleados: 300 } as const;
 
-/** Segmento comercial de una cuenta. Corporativo = grande por empleados o por ingresos; luego, sector fabril o agro. */
+/** Segmento comercial: corporativo (por ingresos), luego industrial (por sector) y, si no, pyme. */
 export function segmentoDe(r: Pick<Registro, "empleados" | "ingresos_estimados" | "sector">): Segmento {
-  if ((r.empleados ?? 0) >= UMBRAL_CORPORATIVO.empleados || (r.ingresos_estimados ?? 0) >= UMBRAL_CORPORATIVO.ingresos) return "corporativo";
+  const corporativo = r.ingresos_estimados !== null && r.ingresos_estimados !== undefined
+    ? r.ingresos_estimados >= UMBRAL_CORPORATIVO.ingresos
+    : (r.empleados ?? 0) >= UMBRAL_CORPORATIVO.empleados;
+  if (corporativo) return "corporativo";
   if (r.sector && SECTORES_INDUSTRIALES.has(r.sector)) return "industrial";
   return "pyme";
 }
@@ -31,6 +32,6 @@ export function senalesNota(notas: string | null) {
   };
 }
 
-/** Tamaño para priorizar: las cuentas grandes se reparten primero en el método de reglas. */
+/** Tamaño de la cuenta para ordenar dentro de un mismo segmento: primero la que más ingresos representa. */
 export const tamano = (r: Pick<Registro, "empleados" | "ingresos_estimados">) =>
   (r.ingresos_estimados ?? 0) + (r.empleados ?? 0) * 1_000_000;

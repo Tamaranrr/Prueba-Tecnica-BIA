@@ -1,4 +1,5 @@
-import { diasEntre } from "./filtros";
+import { antiguedadDe, INDICE_NIVEL } from "./antiguedad";
+import { diasEntre } from "./fechas";
 import { segmentoDe, senalesNota } from "./segmento";
 import type { EvaluacionCandidato, ParametrosMotor, Registro, Usuario } from "./tipos";
 
@@ -84,8 +85,14 @@ export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo)
     des.segmento = u.segmento_experto === seg ? p.segmento : 0;
     des.zona = registro.zona && u.zona === registro.zona ? p.zona : 0;
     des.carga = Math.round(p.carga * (1 - ratio(c)));
-    // Antigüedad: desempata a favor de la experiencia, salvo en cuentas de poca prioridad, donde los nuevos ganan ritmo.
-    des.antiguedad = Math.round(p.antiguedad * (poco ? 1 - Math.min(anios, 5) / 5 : Math.min(anios, 5) / 5));
+    // Antigüedad por nivel (rampa, junior, pleno, senior). Las cuentas exigentes (corporativas, urgentes o que piden senior)
+    // favorecen la experiencia; las pequeñas o de poca prioridad favorecen a quien lleva menos, para que se nivele.
+    const nivel = INDICE_NIVEL[c.cartera?.nivel ?? antiguedadDe(u.fecha_ingreso, params.fechaReferencia).nivel];
+    const exigente = seg === "corporativo" || sen?.urgencia === "alta" || pideSenior;
+    const nivelar = !exigente && (poco || seg === "pyme");
+    des.antiguedad = Math.round(p.antiguedad * (exigente ? nivel / 3 : nivelar ? (3 - nivel) / 3 : 0.5));
+    // Balance de cuentas grandes: quien ya lleva muchas cuentas corporativas suma menos (tope de referencia en los parámetros).
+    if (seg === "corporativo") des.balance_grandes = Math.round(p.cartera * (1 - Math.min(1, (c.cartera?.corporativo ?? 0) / Math.max(1, params.topeGrandes))));
     if (industrial && u.segmento_experto === "industrial") des.necesidad_industrial = p.segmento;
     // Restricciones fuertes: las cuentas grandes no van a vendedores nuevos; las notas pesan.
     if (seg === "corporativo" && dias < p.diasMinCorporativo) des.cuenta_grande_vendedor_nuevo = -1000;
@@ -100,7 +107,7 @@ export function reglas({ registro, elegibles, usuarios, params }: EntradaMetodo)
   const d = anotar[g.c.usuario_id].desglose!;
   const notas = [pideSenior && "pide senior", pideSector && "pide conocer el sector", industrial && "necesidad industrial", poco && "poco prioritaria: favorece a vendedores nuevos"].filter(Boolean);
   const motivo =
-    `Reglas: cuenta ${seg}; ${g.puntaje} pts (segmento ${d.segmento}, zona ${d.zona}, carga ${d.carga}, antigüedad ${d.antiguedad})` +
+    `Reglas: cuenta ${seg}; ${g.puntaje} pts (segmento ${d.segmento}, zona ${d.zona}, carga ${d.carga}, antigüedad ${d.antiguedad}${d.balance_grandes !== undefined ? `, balance de cuentas grandes ${d.balance_grandes}` : ""})` +
     (notas.length ? `; lo que dice la nota (${notas.join(", ")}) se aplicó` : "") + nota_pool + ".";
   return { usuario_id: g.c.usuario_id, motivo, anotar };
 }

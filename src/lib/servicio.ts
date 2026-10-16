@@ -1,11 +1,13 @@
 import { db, ErrorNegocio, ok } from "./db";
 import { calcularCarga, duenosActuales } from "./engine/carga";
-import { evaluarCandidato } from "./engine/filtros";
+import { calcularPerfiles, cuentasFrias, DIAS_FRIA } from "./engine/cartera";
+import { contextoRegistro, evaluarCandidato } from "./engine/filtros";
 import { marcarDuplicadosEnTrabajo } from "./engine/duplicados";
 import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
 import { leerSenales } from "./notasServicio";
 import type { SenalesNota } from "./notas";
 import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, PROMPT_VERSION, proponerIA } from "./ia";
+import { esVivo } from "./engine/tipos";
 import type {
   Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, ResultadoMotor, Usuario,
 } from "./engine/tipos";
@@ -14,7 +16,8 @@ export type MetodoDeterminista = Exclude<Metodo, "ia">;
 export type Alcance =
   | { tipo: "pendientes" }
   | { tipo: "usuario"; usuario_id: number }     // reasignar todo lo vivo de un vendedor
-  | { tipo: "registros"; ids: number[] };       // reasignar registros concretos
+  | { tipo: "registros"; ids: number[] }        // reasignar registros concretos
+  | { tipo: "frias"; dias?: number };           // reasignar cuentas vivas sin movimiento desde hace N días
 
 export interface Solicitud {
   metodo: Metodo;
@@ -25,7 +28,19 @@ export interface Solicitud {
   fechaReferencia?: string;
 }
 
+const ESTADOS_REPARTIBLES = ["asignado", "autoasignado", "en_gestion"] as const;
+
 export const hoy = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
+
+/**
+ * Fecha de operación: el "hoy" de los datos, la del último movimiento registrado (creación de un registro o actividad).
+ * Se usa por defecto en vez del reloj: los datos son una foto de una operación y con el reloj casi todas las ausencias
+ * ya habrían terminado. Siempre se puede cambiar a mano; la consola avisa cuando difiere de hoy.
+ */
+export function fechaOperacion(base: { registros: Pick<Registro, "fecha_creacion">[]; actividad: Pick<Actividad, "fecha">[] }): string {
+  const fechas = [...base.registros.map((r) => r.fecha_creacion), ...base.actividad.map((a) => a.fecha)].sort();
+  return fechas.at(-1) ?? hoy();
+}
 
 interface FilaAsignacion {
   id: string; registro_id: number; usuario_id: number; vigente: boolean; ejecucion_id: string;
@@ -54,7 +69,7 @@ type Base = Awaited<ReturnType<typeof leerTodo>>;
 
 /** Arma el lote, la carga y los parámetros efectivos. No corre ningún método ni escribe nada. */
 export function armarLote(base: Base, sol: Solicitud, senales?: Map<string, SenalesNota>) {
-  const fecha = sol.fechaReferencia ?? hoy();
+  const fecha = sol.fechaReferencia ?? fechaOperacion(base);
   const duenos = duenosActuales(base.actividad, base.vigentes);
   let lote: Registro[];
   // La zona estricta tiene sentido para balancear; en reglas e IA (que pesan el encaje de segmento) la zona es una preferencia.
@@ -64,18 +79,20 @@ export function armarLote(base: Base, sol: Solicitud, senales?: Map<string, Sena
     lote = base.registros.filter((r) => r.estado === "nuevo");
   } else if (sol.alcance.tipo === "usuario") {
     const uid = sol.alcance.usuario_id;
-    lote = base.registros.filter((r) => ["asignado", "en_gestion"].includes(r.estado) && duenos.get(r.id) === uid);
-    extra = { ...extra, estados: ["asignado", "en_gestion"], excluirUsuarios: [...(extra.excluirUsuarios ?? []), uid] };
+    lote = base.registros.filter((r) => esVivo(r.estado) && duenos.get(r.id) === uid);
+    extra = { ...extra, estados: [...ESTADOS_REPARTIBLES] };
+  } else if (sol.alcance.tipo === "frias") {
+    const frias = cuentasFrias(base.registros, base.actividad, base.vigentes, fecha, sol.alcance.dias ?? DIAS_FRIA);
+    lote = base.registros.filter((r) => frias.has(r.id));
+    extra = { ...extra, estados: [...ESTADOS_REPARTIBLES] };
   } else {
     const ids = new Set(sol.alcance.ids);
     lote = base.registros.filter((r) => ids.has(r.id));
     if (lote.length !== ids.size) throw new ErrorNegocio("Hay registros que no existen en la selección.");
-    extra = { ...extra, estados: ["nuevo", "asignado", "en_gestion"] };
-    for (const r of lote) {
-      const d = duenos.get(r.id);
-      if (d !== undefined && r.estado !== "nuevo") extra.excluirUsuarios = [...new Set([...(extra.excluirUsuarios ?? []), d])];
-    }
+    extra = { ...extra, estados: ["nuevo", ...ESTADOS_REPARTIBLES] };
   }
+  // Nadie puede recibir su propio registro: cada uno lleva a su dueño actual y el filtro duro lo descarta.
+  lote = lote.map((r) => (r.estado === "nuevo" ? r : { ...r, dueno_actual: duenos.get(r.id) ?? null }));
 
   lote = marcarDuplicadosEnTrabajo(lote, base.registros);
   // Lectura de las notas hecha por IA (si se pidió): se adjunta a cada registro como un dato más para el motor.
@@ -85,9 +102,12 @@ export function armarLote(base: Base, sol: Solicitud, senales?: Map<string, Sena
 
   // La carga no cuenta los registros que se están moviendo (liberan cupo a su dueño actual).
   const idsLote = new Set(lote.map((r) => r.id));
-  const cargaInicial = calcularCarga(base.registros.filter((r) => !idsLote.has(r.id)), base.actividad, base.vigentes);
+  const fuera = base.registros.filter((r) => !idsLote.has(r.id));
+  const cargaInicial = calcularCarga(fuera, base.actividad, base.vigentes);
   const params = parametros(fecha, extra);
-  const datos: DatosMotor = { registros: lote, usuarios: base.usuarios, ausencias: base.ausencias, cargaInicial };
+  // Cartera de cada vendedor: lo que ya tiene (sin lo que se está moviendo) y cómo se ha movido.
+  const perfiles = calcularPerfiles(base.usuarios, fuera, base.actividad, duenos, base.vigentes, fecha);
+  const datos: DatosMotor = { registros: lote, usuarios: base.usuarios, ausencias: base.ausencias, cargaInicial, perfiles };
   return { datos, params, reasigna, duenos, cargaInicial, tipo: reasigna ? ("reasignacion" as const) : ("asignacion" as const) };
 }
 
@@ -187,7 +207,8 @@ export async function persistir(
     }));
     if (rows.length) ok(await c.from("asignaciones").insert(rows as never), "insertar asignaciones");
     const nuevos = filas.map((f) => f.registro_id);
-    if (nuevos.length) ok(await c.from("registros").update({ estado: "asignado" } as never).in("id", nuevos).eq("estado", "nuevo"), "estado registros");
+    // Todo lo que asigna el motor queda "autoasignado" (distinto de lo que ya venía asignado por una persona).
+    if (nuevos.length) ok(await c.from("registros").update({ estado: "autoasignado" } as never).in("id", nuevos).neq("estado", "descartado"), "estado registros");
   } catch (e) {
     await revertir();
     throw e;
@@ -227,7 +248,7 @@ export async function ejecutar(sol: Solicitud, actorId: unknown, previewId?: unk
     for (const p of validas) {
       const r = reg.get(p.registro_id), u = usuarios.get(p.usuario_id!);
       // Entre la previsualización y ahora pudo cambiar algo (otro reparto, una ausencia nueva...): se revalida.
-      const ev = r && u ? evaluarCandidato(u, r, ctx, true) : null;
+      const ev = r && u ? evaluarCandidato(u, contextoRegistro(r), ctx, true) : null;
       if (!r || !ev?.elegible || razonesRetencion(r, l.params).length) {
         throw new ErrorNegocio(`Los datos cambiaron desde la previsualización (registro #${p.registro_id}). Genera una nueva previsualización.`);
       }
@@ -274,10 +295,10 @@ export async function reasignarManual(
 
   const duenos = duenosActuales(base.actividad, base.vigentes);
   if (duenos.get(reg.id) === dest.id) throw new ErrorNegocio("El registro ya está con ese vendedor.");
-  const fecha = input.fechaReferencia ?? hoy();
+  const fecha = input.fechaReferencia ?? fechaOperacion(base);
   const params = parametros(fecha, { zona: "ignorar" }); // el coordinador puede saltarse la zona; lo demás no
   const carga = calcularCarga(base.registros.filter((r) => r.id !== reg.id), base.actividad, base.vigentes);
-  const ev = evaluarCandidato(dest, reg, { ausencias: base.ausencias, carga, params });
+  const ev = evaluarCandidato(dest, { ...contextoRegistro(reg), dueno_actual: duenos.get(reg.id) ?? null }, { ausencias: base.ausencias, carga, params });
   if (!ev.elegible) throw new ErrorNegocio(`${dest.nombre} no puede recibir el registro: ${ev.descartes.join(", ")}`, ev);
 
   const id = await persistir(
