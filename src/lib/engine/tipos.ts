@@ -27,6 +27,10 @@ export interface ParametrosMotor {
   /** Si la zona estricta no deja candidatos, desbordar a cualquier zona (queda anotado). */
   desbordarSiNoHay: boolean;
   incluirLideres: boolean;
+  /** Estados de registro que se pueden repartir. Por defecto solo "nuevo"; al reasignar se amplía. */
+  estados: string[];
+  /** Usuarios que no pueden recibir en este lote (ej. el que se reasigna o quien se va). */
+  excluirUsuarios: number[];
   /** Registros con estas banderas no se asignan: quedan retenidos para revisión. */
   retener: string[];
   /** Pesos del método "reglas". */
@@ -41,7 +45,7 @@ export interface PesosReglas {
 }
 
 export const PARAMETROS_DEFECTO: Omit<ParametrosMotor, "fechaReferencia"> = {
-  zona: "estricta", desbordarSiNoHay: true, incluirLideres: false,
+  zona: "estricta", desbordarSiNoHay: true, incluirLideres: false, estados: ["nuevo"], excluirUsuarios: [],
   retener: ["duplicado", "pidio_no_insistir"],
   pesos: { segmento: 40, zona: 20, carga: 30, antiguedad: 10, diasMinCorporativo: 90, aniosSenior: 2 },
 };

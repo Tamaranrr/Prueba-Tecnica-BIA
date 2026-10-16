@@ -21,7 +21,7 @@ export function parametros(fechaReferencia: string, parcial: Partial<ParametrosM
 /** Razones por las que un registro NO se asigna sino que se retiene para revisión humana. */
 export function razonesRetencion(r: Registro, params: ParametrosMotor): string[] {
   const out: string[] = [];
-  if (r.estado !== "nuevo") out.push(`estado_${r.estado}`);
+  if (!params.estados.includes(r.estado)) out.push(`estado_${r.estado}`);
   if (r.duplicado_de !== null && params.retener.includes("duplicado")) out.push(`duplicado_de_${r.duplicado_de}`);
   for (const b of r.banderas) if (b !== "posible_duplicado" && params.retener.includes(b)) out.push(b);
   return out;

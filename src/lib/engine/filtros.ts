@@ -27,6 +27,7 @@ export function evaluarCandidato(
   const d: string[] = [];
 
   if (u.rol === "admin" || (u.rol === "lider" && !params.incluirLideres)) d.push(`rol_${u.rol}_no_asignable`);
+  if (params.excluirUsuarios.includes(u.id)) d.push("excluido_del_lote");
   if (!u.activo) d.push("inactivo");
   if (u.fecha_ingreso && u.fecha_ingreso > fecha) d.push(`aun_no_ingresa(${u.fecha_ingreso})`);
   const aus = ausenciaVigente(ausencias, u.id, fecha);
