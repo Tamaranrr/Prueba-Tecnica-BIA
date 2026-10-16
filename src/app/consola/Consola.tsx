@@ -19,6 +19,8 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
+const fechaLarga = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("es-CO", { day: "numeric", month: "short" });
+
 export function Consola() {
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,9 +67,9 @@ export function Consola() {
     const pend = datos.registros.filter((r) => r.estado === "nuevo");
     const esperas = pend.map((r) => esperaDe(r, datos.fecha) ?? 0);
     const vend = datos.usuarios.filter((u) => u.rol === "vendedor");
-    const disp = vend.filter((u) => u.activo && !u.ausencia && (u.capacidad_maxima ?? 0) > u.carga);
-    const cap = vend.filter((u) => u.activo && u.capacidad_maxima).reduce((s, u) => s + (u.capacidad_maxima ?? 0), 0);
-    const uso = vend.filter((u) => u.activo && u.capacidad_maxima).reduce((s, u) => s + u.carga, 0);
+    const disp = vend.filter((u) => u.activo && !u.ausencia && !u.ausencia_proxima && (u.capacidad_efectiva ?? 0) > u.carga);
+    const cap = vend.filter((u) => u.activo && u.capacidad_efectiva).reduce((s, u) => s + (u.capacidad_efectiva ?? 0), 0);
+    const uso = vend.filter((u) => u.activo && u.capacidad_efectiva).reduce((s, u) => s + u.carga, 0);
     return {
       pendientes: pend.length, masAntiguo: esperas.length ? Math.max(...esperas) : 0, conEspera: esperas.filter((d) => d >= 7).length,
       disponibles: disp.length, vendedores: vend.length, ocupacion: cap ? Math.round((uso / cap) * 100) : 0,
@@ -90,10 +92,16 @@ export function Consola() {
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className="text-slate-300">Sesión: <b className="text-white">{sesion.nombre}</b> ({sesion.rol})</span>
             <button className="rounded-lg border border-slate-600 px-3 py-1.5 text-slate-200 hover:bg-slate-800" onClick={salir}>Cerrar sesión</button>
-            <label className="flex items-center gap-2 text-slate-300" title="Fecha usada para ausencias, ingreso y antigüedad. Queda guardada en la traza.">Fecha de referencia
+            <label className="flex items-center gap-2 text-slate-300" title="El 'hoy' de la operación: con esta fecha se miran las ausencias, el ingreso y la antigüedad. Por defecto es la del último movimiento registrado en los datos. Queda guardada en la traza.">Fecha de operación
               <input type="date" className={`${campo} text-slate-900`} value={fecha}
                 onChange={(e) => { setFecha(e.target.value); if (e.target.value) cargar(e.target.value); }} />
             </label>
+            {fecha !== datos.fecha_reloj && (
+              <span className="text-xs text-slate-400">Datos al {fechaLarga(datos.fecha_datos)}; hoy es {fechaLarga(datos.fecha_reloj)}.{" "}
+                <button className="underline hover:text-white" onClick={() => { setFecha(datos.fecha_reloj); cargar(datos.fecha_reloj); }}>Usar hoy</button>
+                {fecha !== datos.fecha_datos && <>{" · "}<button className="underline hover:text-white" onClick={() => { setFecha(datos.fecha_datos); cargar(datos.fecha_datos); }}>Volver a la fecha de los datos</button></>}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -102,7 +110,7 @@ export function Consola() {
         <section aria-label="Resumen" className="grid grid-cols-2 gap-3 py-5 lg:grid-cols-4">
           <Kpi etiqueta="Pendientes" valor={kpis.pendientes} nota={`${kpis.conEspera} esperan 7 días o más`} tono={kpis.conEspera ? "ambar" : "gris"} />
           <Kpi etiqueta="Más antiguo sin tocar" valor={`${kpis.masAntiguo} d`} nota="desde su creación" tono={kpis.masAntiguo >= 14 ? "rojo" : "gris"} />
-          <Kpi etiqueta="Vendedores disponibles" valor={`${kpis.disponibles}/${kpis.vendedores}`} nota="activos, sin ausencia y con cupo" />
+          <Kpi etiqueta="Vendedores disponibles" valor={`${kpis.disponibles}/${kpis.vendedores}`} nota="activos, sin ausencia (ni próxima) y con cupo" />
           <Kpi etiqueta="Ocupación del equipo" valor={`${kpis.ocupacion}%`} nota="carga sobre capacidad" tono={kpis.ocupacion >= 85 ? "rojo" : "gris"} />
         </section>
 

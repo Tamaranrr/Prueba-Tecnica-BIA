@@ -4,9 +4,10 @@ import { Fragment, useState } from "react";
 import { api, METODOS, type Datos, type Preview } from "@/lib/cliente";
 import { PARAMETROS_DEFECTO, PERFILES_PESOS, PESOS_DEFECTO } from "@/lib/engine/tipos";
 import { TablaRegistros } from "./TablaRegistros";
+import { TablaCandidatos } from "./Candidatos";
 import { Banderas, Badge, Barra, LecturaNota, boton, campo, Tarjeta, Titulo } from "./ui";
 
-type Alcance = "pendientes" | "seleccion" | "usuario";
+type Alcance = "pendientes" | "seleccion" | "usuario" | "frias";
 const RETENER = [
   { id: "duplicado", nombre: "Posibles duplicados" },
   { id: "pidio_no_insistir", nombre: "Pidieron no insistir" },
@@ -35,6 +36,11 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const elegirMetodo = (id: string) => { setMetodo(id); setZona(id === "reglas" || id === "ia" ? "preferente" : "estricta"); };
   const perfilActual = PERFILES_PESOS.find((p) => (Object.keys(p.pesos) as (keyof typeof pesos)[]).every((k) => p.pesos[k] === pesos[k]))?.id ?? "personalizado";
   const [limiteIA, setLimiteIA] = useState(10);
+  const [ventanaAusencia, setVentanaAusencia] = useState(PARAMETROS_DEFECTO.ventanaAusenciaDias);
+  const [capacidadRampa, setCapacidadRampa] = useState(PARAMETROS_DEFECTO.capacidadRampa);
+  const [rampaPyme, setRampaPyme] = useState(PARAMETROS_DEFECTO.rampaSoloPyme);
+  const [diasFrias, setDiasFrias] = useState(30);
+  const [soloPleno, setSoloPleno] = useState(PARAMETROS_DEFECTO.soloPlenoParaGrandes);
   const [prev, setPrev] = useState<Preview | null>(null);
   const [prevSol, setPrevSol] = useState<string | null>(null); // configuración exacta con la que se previsualizó
   const [cargando, setCargando] = useState(false);
@@ -45,15 +51,20 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const regs = new Map(datos.registros.map((r) => [r.id, r]));
   const pendientes = datos.registros.filter((r) => r.estado === "nuevo");
   const vendedoresConCarga = datos.usuarios.filter((u) => u.rol === "vendedor" && u.carga > 0);
+  const frias = datos.usuarios.reduce((s, u) => s + u.perfil.frias, 0);
 
   const solicitud = () => ({
     metodo, fechaReferencia: fecha, ia: { limite: limiteIA },
     alcance: alcance === "pendientes" ? { tipo: "pendientes" }
       : alcance === "seleccion" ? { tipo: "registros", ids: [...seleccion].sort((a, b) => a - b) }
+      : alcance === "frias" ? { tipo: "frias", dias: diasFrias }
       : { tipo: "usuario", usuario_id: origen },
-    parametros: { zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos, grandesSoloExpertos: grandesExpertos, usarNotasIA: usarNotas },
+    parametros: {
+      zona, desbordarSiNoHay: desbordar, incluirLideres: lideres, retener, pesos, grandesSoloExpertos: grandesExpertos, usarNotasIA: usarNotas,
+      ventanaAusenciaDias: ventanaAusencia, capacidadRampa, rampaSoloPyme: rampaPyme, soloPlenoParaGrandes: soloPleno,
+    },
   });
-  const listoParaCorrer = alcance === "pendientes" || (alcance === "seleccion" && seleccion.size > 0) || (alcance === "usuario" && origen !== "");
+  const listoParaCorrer = alcance === "pendientes" || (alcance === "seleccion" && seleccion.size > 0) || (alcance === "usuario" && origen !== "") || alcance === "frias";
   // Si cambia cualquier ajuste después de previsualizar, lo que se vería ya no es lo que se ejecutaría.
   const desactualizada = prev !== null && prevSol !== JSON.stringify(solicitud());
 
@@ -87,11 +98,14 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
         <Tarjeta>
           <Titulo>1 · Qué repartir</Titulo>
           <label className="mb-2 flex items-start gap-2 text-sm"><input type="radio" checked={alcance === "pendientes"} onChange={() => setAlcance("pendientes")} className="mt-1" />
-            <span>Todos los pendientes <Badge tono="azul">{pendientes.length}</Badge></span></label>
+            <span>Todos los pendientes <Badge tono="marca">{pendientes.length}</Badge></span></label>
           <label className={`mb-2 flex items-start gap-2 text-sm ${seleccion.size ? "" : "text-slate-400"}`}><input type="radio" disabled={seleccion.size === 0} checked={alcance === "seleccion"} onChange={() => setAlcance("seleccion")} className="mt-1" />
-            <span>Solo los registros seleccionados <Badge tono={seleccion.size ? "azul" : "gris"}>{seleccion.size}</Badge>{seleccion.size === 0 && <span className="block text-xs">Márcalos en la tabla de la derecha o en Registros.</span>}</span></label>
+            <span>Solo los registros seleccionados <Badge tono={seleccion.size ? "marca" : "gris"}>{seleccion.size}</Badge>{seleccion.size === 0 && <span className="block text-xs">Márcalos en la tabla de la derecha o en Registros.</span>}</span></label>
           <label className="flex items-start gap-2 text-sm"><input type="radio" checked={alcance === "usuario"} onChange={() => setAlcance("usuario")} className="mt-1" />
             <span>Reasignar todo lo de un vendedor</span></label>
+          <label className={`mt-2 flex items-start gap-2 text-sm ${frias ? "" : "text-slate-400"}`}><input type="radio" disabled={!frias} checked={alcance === "frias"} onChange={() => setAlcance("frias")} className="mt-1" />
+            <span>Cuentas frías: sin movimiento desde hace <input type="number" min={1} className={`${campo} mx-1 w-16`} value={diasFrias} onChange={(e) => setDiasFrias(Math.max(1, Number(e.target.value)))} disabled={alcance !== "frias"} /> días <Badge tono={frias ? "ambar" : "gris"}>{frias}</Badge>
+              <span className="block text-xs text-slate-500">Cuentas que ya tienen dueño pero nadie ha movido. Cada una pasa a otro vendedor.</span></span></label>
           {alcance === "usuario" && (
             <select className={`${campo} mt-2 w-full`} value={origen} onChange={(e) => setOrigen(e.target.value ? Number(e.target.value) : "")}>
               <option value="">Elegir vendedor…</option>
@@ -129,6 +143,15 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
           </label>
           {zona === "estricta" && <label className="mb-2 flex gap-2 text-sm"><input type="checkbox" checked={desbordar} onChange={(e) => setDesbordar(e.target.checked)} />Desbordar a otras zonas si no hay nadie</label>}
           <label className="mb-2 flex gap-2 text-sm" title="Una IA lee cada nota en texto libre y la convierte en señales: urgencia, perfil senior, experto del sector, necesidad industrial. Cada texto se lee una sola vez y queda guardado."><input type="checkbox" checked={usarNotas} onChange={(e) => setUsarNotas(e.target.checked)} />Leer las notas con IA (urgencia, perfil, necesidad)</label>
+          <div className="mb-3 rounded-lg bg-slate-50 p-2.5 text-sm text-slate-700">
+            <label className="mb-2 flex items-center justify-between gap-2" title="No se dan cuentas nuevas a quien se ausenta dentro de estos días. 0 = solo se excluye a quien ya está ausente.">Ausencias próximas (días)
+              <input type="number" min={0} max={60} className={`${campo} w-20`} value={ventanaAusencia} onChange={(e) => setVentanaAusencia(Math.max(0, Number(e.target.value)))} /></label>
+            <label className="mb-2 flex items-center justify-between gap-2" title="Un recién entrado con capacidad 0 recibe esta capacidad provisional para poder nivelarse. 0 = queda excluido.">Capacidad de recién entrados
+              <input type="number" min={0} max={40} className={`${campo} w-20`} value={capacidadRampa} onChange={(e) => setCapacidadRampa(Math.max(0, Number(e.target.value)))} /></label>
+            <label className="flex gap-2" title="Quien lleva menos de 6 meses solo recibe cuentas pequeñas (pyme)."><input type="checkbox" checked={rampaPyme} onChange={(e) => setRampaPyme(e.target.checked)} />En rampa (menos de 6 meses): solo cuentas pyme</label>
+            <label className="mt-2 flex gap-2" title="Una cuenta corporativa solo se asigna a quien lleva 2 años o más (nivel pleno o senior), con cualquier método."><input type="checkbox" checked={soloPleno} onChange={(e) => setSoloPleno(e.target.checked)} />Cuentas corporativas solo a pleno o senior (2 años o más)</label>
+            <p className="mt-2 text-xs text-slate-500">Orden de reparto: corporativo, industrial, pyme. Corporativo se define por ingresos (18.000 M COP o más).</p>
+          </div>
           <label className="mb-3 flex gap-2 text-sm"><input type="checkbox" checked={lideres} onChange={(e) => setLideres(e.target.checked)} />Incluir líderes como receptores</label>
           <p className="mb-1 text-sm text-slate-700">Retener para revisión (no asignar):</p>
           {RETENER.map((r) => (
@@ -205,7 +228,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
               <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
                 {cambioPorUsuario.map((u) => (
                   <div key={u.id} className="flex items-center justify-between gap-2 text-sm"><span className="truncate">{u.nombre}</span>
-                    <Barra valor={prev.cargaInicial[u.id] ?? 0} extra={(prev.cargaFinal[u.id] ?? 0) - (prev.cargaInicial[u.id] ?? 0)} max={u.capacidad_maxima} /></div>
+                    <Barra valor={prev.cargaInicial[u.id] ?? 0} extra={(prev.cargaFinal[u.id] ?? 0) - (prev.cargaInicial[u.id] ?? 0)} max={u.capacidad_efectiva} /></div>
                 ))}
               </div>
             </Tarjeta>
@@ -238,11 +261,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                                   <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.prompt_enviado}</pre>
                                   <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre></details>
                               )}
-                              <table className="w-full text-xs"><thead className="text-slate-400"><tr><th className="text-left">Candidato</th><th className="text-left">Carga</th><th className="text-left">Puntaje</th><th className="text-left">Detalle</th></tr></thead>
-                                <tbody>{p.candidatos.map((c) => (
-                                  <tr key={c.usuario_id} className={`border-t border-slate-200 ${c.usuario_id === p.usuario_id ? "bg-emerald-50 font-medium" : ""}`}>
-                                    <td className="py-1">{c.nombre}</td><td>{c.carga}/{c.capacidad ?? "sin dato"}</td><td>{c.puntaje ?? "sin dato"}</td>
-                                    <td>{c.elegible ? (c.desglose ? Object.entries(c.desglose).map(([k, v]) => `${k.replaceAll("_", " ")} ${v}`).join(" · ") : "elegible") : <span className="text-red-700">descartado: {c.descartes.join(", ")}</span>}</td></tr>))}</tbody></table>
+                              <TablaCandidatos candidatos={p.candidatos} elegidoId={p.usuario_id} />
                             </td></tr>
                           )}
                         </Fragment>

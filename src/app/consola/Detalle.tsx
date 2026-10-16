@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, fmtFecha, fmtMoneda, type AsignacionTraza, type Datos, type Traza } from "@/lib/cliente";
 import type { SenalesNota } from "@/lib/notas";
+import { TablaCandidatos } from "./Candidatos";
 import { Badge, Banderas, LecturaNota, boton, campo } from "./ui";
 
 export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }: {
@@ -26,8 +27,8 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
 
   // Mismas reglas duras que aplica el servidor: así no se ofrecen destinos que serían rechazados.
   const sinCupoOMotivo = (u: Datos["usuarios"][number]) =>
-    !u.activo ? "inactivo" : u.ausencia ? u.ausencia.motivo.toLowerCase() : !u.capacidad_maxima ? "sin capacidad"
-      : u.carga >= u.capacidad_maxima ? "sin cupo" : u.fecha_ingreso && u.fecha_ingreso > fecha ? "aún no ingresa" : "";
+    !u.activo ? "inactivo" : u.ausencia ? u.ausencia.motivo.toLowerCase() : u.ausencia_proxima ? `se ausenta el ${u.ausencia_proxima.desde.slice(8, 10)}/${u.ausencia_proxima.desde.slice(5, 7)}`
+      : !u.capacidad_efectiva ? "sin capacidad" : u.carga >= u.capacidad_efectiva ? "sin cupo" : u.fecha_ingreso && u.fecha_ingreso > fecha ? "aún no ingresa" : "";
 
   const vigente = traza?.asignaciones.find((a) => a.vigente);
   const ultAct = traza?.actividad.at(-1);
@@ -118,7 +119,7 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
               <option value="">Elegir vendedor…</option>
               {datos.usuarios.filter((u) => u.rol === "vendedor" && u.id !== reg.dueno_id).map((u) => {
                 const no = sinCupoOMotivo(u);
-                return <option key={u.id} value={u.id} disabled={!!no}>{u.nombre}: {u.carga}/{u.capacidad_maxima ?? "sin dato"}{no ? ` (no disponible: ${no})` : ""}</option>;
+                return <option key={u.id} value={u.id} disabled={!!no}>{u.nombre}: {u.carga}/{u.capacidad_efectiva ?? "sin dato"}{u.capacidad_provisional ? " (prov.)" : ""}{no ? ` (no disponible: ${no})` : ""}</option>;
               })}
             </select>
             <textarea className={`${campo} mt-2 w-full`} rows={2} placeholder="Motivo (obligatorio, queda en la traza)" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
@@ -144,11 +145,7 @@ function Asignacion({ a }: { a: AsignacionTraza }) {
       <button className="mt-2 text-xs text-indigo-700 hover:underline" onClick={() => setAbierto(!abierto)}>{abierto ? "Ocultar" : "Ver"} candidatos y parámetros</button>
       {abierto && (
         <div className="mt-2 space-y-2">
-          <table className="w-full text-xs"><thead className="text-left text-slate-400"><tr><th>Candidato</th><th>Carga</th><th>Puntaje</th><th>Detalle</th></tr></thead>
-            <tbody>{(a.candidatos ?? []).map((c) => (
-              <tr key={c.usuario_id} className={`border-t border-slate-100 ${c.usuario_id === a.usuarios.id ? "bg-emerald-50 font-medium" : ""}`}>
-                <td className="py-1">{c.nombre}</td><td>{c.carga}/{c.capacidad ?? "sin dato"}</td><td>{c.puntaje ?? "sin dato"}</td>
-                <td>{c.elegible ? (c.desglose ? Object.entries(c.desglose).map(([k, v]) => `${k.replaceAll("_", " ")} ${v}`).join(" · ") : "elegible") : <span className="text-red-700">descartado: {c.descartes.join(", ")}</span>}</td></tr>))}</tbody></table>
+          <TablaCandidatos candidatos={a.candidatos ?? []} elegidoId={a.usuarios.id} />
           <pre className="overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(a.parametros, null, 2)}</pre>
           {a.prompt_enviado && (
             <div><p className="text-xs font-semibold text-slate-500">Prompt enviado al modelo ({a.modelo})</p>

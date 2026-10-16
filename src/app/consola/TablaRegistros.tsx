@@ -3,9 +3,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { fmtMoneda, type Datos, type RegistroConsola } from "@/lib/cliente";
 import { diasEntre } from "@/lib/engine/filtros";
+import { esVivo } from "@/lib/engine/tipos";
 import { Badge, Banderas, boton, campo } from "./ui";
 
-const TONO_ESTADO = { nuevo: "azul", asignado: "violeta", en_gestion: "verde", descartado: "gris" } as const;
+// autoasignado (lo asignó el motor) va en azul; nuevo pasa a ámbar para no confundirse con él.
+const TONO_ESTADO = { nuevo: "ambar", autoasignado: "azul", asignado: "violeta", en_gestion: "verde", descartado: "gris" } as const;
 const ALERTAS: Record<string, { nombre: string; test: (r: RegistroConsola) => boolean }> = {
   con: { nombre: "Con alertas", test: (r) => alertasDe(r).length > 0 },
   sin: { nombre: "Sin alertas", test: (r) => alertasDe(r).length === 0 },
@@ -39,7 +41,7 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
   const set = (k: keyof Filtros) => (v: string) => setF((x) => ({ ...x, [k]: v }));
 
   const fuentes = useMemo(() => [...new Set(base.map((r) => r.fuente))].sort(), [base]);
-  const duenos = useMemo(() => [...new Set(base.filter((r) => r.estado === "asignado" || r.estado === "en_gestion").map((r) => r.dueno_id).filter((x): x is number => x !== null))], [base]);
+  const duenos = useMemo(() => [...new Set(base.filter((r) => esVivo(r.estado)).map((r) => r.dueno_id).filter((x): x is number => x !== null))], [base]);
 
   const filas = useMemo(() => {
     const q = f.q.trim().toLowerCase();
@@ -48,7 +50,7 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
       (!q || `${r.razon_social} ${r.nit} ${r.ciudad} ${r.sector ?? ""} ${r.notas ?? ""}`.toLowerCase().includes(q)) &&
       (!f.estado || r.estado === f.estado) && (!f.zona || r.zona === f.zona) && (!f.segmento || r.segmento === f.segmento) &&
       (!f.fuente || r.fuente === f.fuente) &&
-      (!f.dueno || (f.dueno === "sin" ? r.estado === "nuevo" : r.dueno_id === Number(f.dueno) && (r.estado === "asignado" || r.estado === "en_gestion"))) &&
+      (!f.dueno || (f.dueno === "sin" ? r.estado === "nuevo" : r.dueno_id === Number(f.dueno) && esVivo(r.estado))) &&
       (!f.alerta || ALERTAS[f.alerta].test(r)) &&
       (minEspera === null || (esperaDe(r, datos.fecha) ?? -1) >= minEspera));
     const valor = (r: RegistroConsola): string | number => {
@@ -80,7 +82,7 @@ export function TablaRegistros({ datos, base, seleccion, setSeleccion, abrir, es
         <input aria-label="Buscar" className={`${campo} sm:col-span-2`} placeholder="Buscar por empresa, NIT, ciudad, sector o nota" value={f.q} onChange={(e) => set("q")(e.target.value)} />
         {!estadoFijo && (
           <select aria-label="Estado" className={campo} value={f.estado} onChange={(e) => set("estado")(e.target.value)}>
-            <option value="">Todos los estados</option>{["nuevo", "asignado", "en_gestion", "descartado"].map((e) => <option key={e} value={e}>{e.replace("_", " ")}</option>)}
+            <option value="">Todos los estados</option>{["nuevo", "autoasignado", "asignado", "en_gestion", "descartado"].map((e) => <option key={e} value={e}>{e.replace("_", " ")}</option>)}
           </select>
         )}
         <select aria-label="Zona" className={campo} value={f.zona} onChange={(e) => set("zona")(e.target.value)}>

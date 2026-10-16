@@ -3,7 +3,7 @@ import { marcasDeSenales } from "@/lib/engine/senales";
 import type { SenalesNota } from "@/lib/notas";
 
 const TONOS: Record<string, string> = {
-  gris: "bg-slate-100 text-slate-700 ring-slate-200", azul: "bg-brand-50 text-brand-700 ring-brand-200",
+  gris: "bg-slate-100 text-slate-700 ring-slate-200", azul: "bg-blue-50 text-blue-700 ring-blue-200", marca: "bg-brand-50 text-brand-700 ring-brand-200",
   verde: "bg-emerald-50 text-emerald-700 ring-emerald-200", ambar: "bg-amber-50 text-amber-800 ring-amber-200",
   rojo: "bg-rose-50 text-rose-700 ring-rose-200", violeta: "bg-violet-50 text-violet-700 ring-violet-200",
 };
@@ -116,7 +116,7 @@ export function Vacio({ titulo, detalle, accion }: { titulo: string; detalle?: s
 /** Lo que la IA leyó en la nota de un registro: urgencia y señales activas. */
 export function LecturaNota({ senales }: { senales?: SenalesNota | null }) {
   if (!senales) return null;
-  const urg = { alta: "rojo", normal: "gris", baja: "azul" } as const;
+  const urg = { alta: "rojo", normal: "gris", baja: "marca" } as const;
   return (
     <span className="inline-flex flex-wrap items-center gap-1" title={senales.razon}>
       <Badge tono={urg[senales.urgencia]}>urgencia {senales.urgencia}</Badge>

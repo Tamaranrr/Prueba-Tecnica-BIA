@@ -1,5 +1,5 @@
 import { antiguedadDe } from "./antiguedad";
-import { sumaDias } from "./fechas";
+import { diasEntre, sumaDias } from "./fechas";
 import type { PerfilVendedor } from "./cartera";
 import { resumenDe } from "./cartera";
 import { segmentoDe } from "./segmento";
@@ -74,6 +74,10 @@ export function evaluarCandidato(
   else if (cap <= 0) d.push("capacidad_cero");
   else if (usado >= cap) d.push(`sin_cupo(${usado}/${cap})`);
 
+  // Una cuenta corporativa pide experiencia: se exige a todos los métodos, no solo a las reglas.
+  if (params.soloPlenoParaGrandes && reg.segmento === "corporativo" && u.fecha_ingreso && diasEntre(u.fecha_ingreso, fecha) < params.pesos.diasMinCorporativo) {
+    d.push(`cuenta_corporativa_pide_${Math.round(params.pesos.diasMinCorporativo / 365)}_anos_de_antiguedad`);
+  }
   if (params.rampaSoloPyme && nivel === "rampa" && reg.segmento && reg.segmento !== "pyme") d.push(`en_rampa_solo_cuentas_pyme(cuenta ${reg.segmento})`);
   if (!ignorarZona && params.zona === "estricta" && reg.zona && u.zona !== reg.zona) d.push(`otra_zona(${u.zona ?? "sin zona"})`);
 

@@ -33,7 +33,7 @@ export function Auditoria({ version }: { version: number }) {
             <Fragment key={e.id}>
               <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => abrir(e.id)}>
                 <td className="py-1.5">{abierta === e.id ? "▾" : "▸"} {fmtFecha(e.creada_en)}</td>
-                <td><Badge tono={e.tipo === "reasignacion" ? "ambar" : "azul"}>{e.tipo}</Badge></td><td>{e.metodo}</td><td>{e.total_registros}</td><td>{e.ejecutado_por}</td><td>{e.fecha_referencia}</td>
+                <td><Badge tono={e.tipo === "reasignacion" ? "ambar" : "marca"}>{e.tipo}</Badge></td><td>{e.metodo}</td><td>{e.total_registros}</td><td>{e.ejecutado_por}</td><td>{e.fecha_referencia}</td>
               </tr>
               {abierta === e.id && (
                 <tr className="bg-slate-50"><td colSpan={6} className="px-4 py-3">

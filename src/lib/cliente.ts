@@ -1,9 +1,16 @@
 // Tipos y helpers de la consola (cliente). Reflejan lo que devuelven las rutas /api.
-import type { EvaluacionCandidato, ParametrosMotor, Propuesta, Registro, Retenido, Usuario } from "./engine/tipos";
+import type { EvaluacionCandidato, ParametrosMotor, Propuesta, Registro, Retenido, ResumenCartera, Usuario } from "./engine/tipos";
 
-export type UsuarioConsola = Usuario & { carga: number; ausencia: { motivo: string; desde: string; hasta: string | null } | null };
+export type AusenciaVista = { motivo: string; desde: string; hasta: string | null };
+export type UsuarioConsola = Usuario & {
+  carga: number;
+  /** Capacidad con la que se evalúa (la real, o la provisional de un recién entrado con capacidad 0). */
+  capacidad_efectiva: number | null; capacidad_provisional: boolean;
+  ausencia: AusenciaVista | null; ausencia_proxima: AusenciaVista | null;
+  perfil: ResumenCartera;
+};
 export type RegistroConsola = Registro & { segmento: string; dueno_id: number | null };
-export interface Datos { fecha: string; usuarios: UsuarioConsola[]; registros: RegistroConsola[] }
+export interface Datos { fecha: string; fecha_datos: string; fecha_reloj: string; usuarios: UsuarioConsola[]; registros: RegistroConsola[] }
 
 export type PropuestaPreview = Propuesta & { dueno_actual: number | null };
 export interface Preview {

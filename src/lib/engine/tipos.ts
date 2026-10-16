@@ -59,8 +59,13 @@ export interface ParametrosMotor {
   rampaSoloPyme: boolean;
   /** Orden de reparto por segmento: quien va primero elige primero. */
   ordenSegmentos: Segmento[];
-  /** Referencia de cuentas corporativas por vendedor: sobre este número ya no suma puntos de balance. */
+  /**
+   * Tope de cuentas corporativas por vendedor. Cuando todos los expertos corporativos disponibles llegan a este número,
+   * la cuenta pasa también a otros vendedores de nivel pleno o más (queda anotado), en vez de concentrarse en unos pocos.
+   */
   topeGrandes: number;
+  /** Una cuenta corporativa solo se asigna a quien tiene la antigüedad mínima (pesos.diasMinCorporativo), con cualquier método. */
+  soloPlenoParaGrandes: boolean;
 }
 export interface PesosReglas {
   segmento: number; zona: number; carga: number; antiguedad: number;
@@ -92,7 +97,7 @@ export const PARAMETROS_DEFECTO: Omit<ParametrosMotor, "fechaReferencia"> = {
   zona: "estricta", desbordarSiNoHay: true, incluirLideres: false, estados: ["nuevo"], excluirUsuarios: [],
   retener: ["duplicado", "pidio_no_insistir"], grandesSoloExpertos: true, usarNotasIA: true,
   ventanaAusenciaDias: 7, capacidadRampa: 10, rampaSoloPyme: true,
-  ordenSegmentos: ["corporativo", "industrial", "pyme"], topeGrandes: 8,
+  ordenSegmentos: ["corporativo", "industrial", "pyme"], topeGrandes: 8, soloPlenoParaGrandes: true,
   pesos: PESOS_DEFECTO,
 };
 

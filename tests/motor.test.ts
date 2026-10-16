@@ -7,7 +7,7 @@ import { antiguedadDe } from "../src/lib/engine/antiguedad";
 import { calcularPerfiles, cuentasFrias } from "../src/lib/engine/cartera";
 import { ausenciaProxima, capacidadEfectiva } from "../src/lib/engine/filtros";
 import { segmentoDe } from "../src/lib/engine/segmento";
-import type { Ausencia, Registro, Usuario } from "../src/lib/engine/tipos";
+import { PESOS_DEFECTO, type Ausencia, type Registro, type Usuario } from "../src/lib/engine/tipos";
 
 const HOY = "2026-10-16";
 
@@ -314,7 +314,7 @@ test("recién entrado con capacidad 0: usa la provisional y solo recibe cuentas 
   assert.equal(por.get(1)!.usuario_id, 7);                       // pyme: sí
   assert.equal(por.get(2)!.usuario_id, null);                    // corporativa: no
   assert.equal(por.get(3)!.usuario_id, null);                    // industrial: no
-  assert.match(por.get(2)!.candidatos[0].descartes[0], /en_rampa_solo_cuentas_pyme/);
+  assert.ok(por.get(2)!.candidatos[0].descartes.some((x) => /en_rampa_solo_cuentas_pyme/.test(x)));
   assert.equal(por.get(1)!.candidatos[0].capacidad_provisional, true);
   const sin = proponer("balanceo_carga", datos([rampa], [r(1)]), parametros(HOY, { capacidadRampa: 0 }));
   assert.equal(sin.propuestas[0].usuario_id, null);               // sin capacidad provisional vuelve a quedar excluido
@@ -411,4 +411,42 @@ test("reglas: un experto corporativo con muchas cuentas grandes cede ante otro q
   const usuarios = [u(1, { segmento_experto: "corporativo" }), u(2, { segmento_experto: "corporativo" })];
   const res = proponer("reglas", datos(usuarios, [r(1, { empleados: 900 })], { perfiles }), parametros(HOY));
   assert.equal(res.propuestas[0].usuario_id, 2);
+});
+
+// ───── cuentas corporativas: antigüedad para todos los métodos y tope por vendedor ─────
+for (const metodo of ["round_robin", "balanceo_carga", "reglas"] as const) {
+  test(`cuenta corporativa [${metodo}]: no va a quien lleva menos de 2 años, aunque tenga menos carga`, () => {
+    const usuarios = [u(1, { fecha_ingreso: "2025-08-01", segmento_experto: "corporativo" }), u(2, { fecha_ingreso: "2019-01-01", segmento_experto: "corporativo" })];
+    const res = proponer(metodo, datos(usuarios, [r(1, { empleados: 900 })], { cargaInicial: { 2: 8 } }), parametros(HOY));
+    assert.equal(res.propuestas[0].usuario_id, 2);
+    assert.match(res.propuestas[0].candidatos[0].descartes[0], /cuenta_corporativa_pide_2_anos/);
+    // apagado, el junior sí puede recibirla
+    const libre = proponer(metodo, datos(usuarios, [r(1, { empleados: 900 })], { cargaInicial: { 2: 8 } }), parametros(HOY, { soloPlenoParaGrandes: false, grandesSoloExpertos: false, pesos: { ...PESOS_DEFECTO, diasMinCorporativo: 0 } }));
+    assert.equal(libre.propuestas[0].usuario_id, 1);
+  });
+}
+
+test("tope de cuentas grandes: si los expertos corporativos ya están saturados, compiten otros con antigüedad", () => {
+  const perfiles = calcularPerfiles([1, 2, 3].map((id) => ({ id, fecha_ingreso: "2020-01-01" })), [], [], new Map(), [], HOY);
+  perfiles[1].corporativo = 8; perfiles[1].cuentas = 8;
+  const usuarios = [u(1, { segmento_experto: "corporativo" }), u(2, { segmento_experto: "pyme" }), u(3, { segmento_experto: "pyme", fecha_ingreso: "2026-06-01" })];
+  // el experto (1) está en el tope y casi lleno; el vendedor 3 no cumple la antigüedad mínima; queda el 2
+  const res = proponer("reglas", datos(usuarios, [r(1, { empleados: 900 })], { perfiles, cargaInicial: { 1: 9 } }), parametros(HOY));
+  assert.equal(res.propuestas[0].usuario_id, 2);
+  assert.match(res.propuestas[0].motivo, /ya tienen 8 o más cuentas grandes/);
+  // por debajo del tope, el experto sigue siendo el único que compite
+  perfiles[1].corporativo = 7;
+  const bajo = proponer("reglas", datos(usuarios, [r(1, { empleados: 900 })], { perfiles }), parametros(HOY));
+  assert.equal(bajo.propuestas[0].usuario_id, 1);
+  assert.match(bajo.propuestas[0].motivo, /solo compiten expertos corporativos/);
+});
+
+test("cuentas grandes con pocos expertos: se reparten y los demás con antigüedad completan, sin superar el tope", () => {
+  const usuarios = [u(1, { segmento_experto: "corporativo" }), u(2, { segmento_experto: "corporativo" }), u(3), u(4)];
+  const regs = Array.from({ length: 20 }, (_, i) => r(i + 1, { empleados: 900 }));
+  const res = proponer("reglas", datos(usuarios, regs), parametros(HOY, { topeGrandes: 6 }));
+  const n = (id: number) => res.propuestas.filter((p) => p.usuario_id === id).length;
+  assert.ok([1, 2, 3, 4].every((id) => n(id) <= 6), `alguien pasó el tope de 6: ${[1, 2, 3, 4].map(n).join(", ")}`);
+  assert.ok(n(3) + n(4) >= 6);                                       // los dos que no son expertos completan lo que los expertos no pueden llevar
+  assert.equal(res.propuestas.filter((p) => p.usuario_id === null).length, 0);
 });

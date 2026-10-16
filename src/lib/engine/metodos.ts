@@ -48,19 +48,28 @@ export function balanceoCarga({ elegibles }: EntradaMetodo): Seleccion {
 }
 
 /**
- * Regla explícita (no un peso): las cuentas grandes son la causa de las peleas, así que solo compiten los
- * expertos corporativos elegibles y con la antigüedad mínima. Si no queda ninguno, compite cualquiera y se dice.
+ * Regla explícita (no un peso): las cuentas grandes son la causa de las peleas, así que solo compiten los expertos
+ * corporativos elegibles, con la antigüedad mínima y por debajo del tope de cuentas grandes. Si todos los expertos ya
+ * llegaron al tope, compiten también otros vendedores con la antigüedad mínima (se dice en el motivo): así las cuentas
+ * grandes no se concentran en una o dos personas. Si no hay ningún experto, compite cualquiera.
  * La usan el método de reglas y el de IA (el modelo solo ve este grupo).
  */
 export function grupoParaCuenta(seg: string, elegibles: EvaluacionCandidato[], usuarios: Map<number, Usuario>, params: ParametrosMotor) {
   if (seg !== "corporativo" || !params.grandesSoloExpertos) return { pool: elegibles, nota: "" };
-  const expertos = elegibles.filter((c) => {
+  const cumple = (c: EvaluacionCandidato) => {
     const u = usuarios.get(c.usuario_id)!;
-    return u.segmento_experto === "corporativo" && (!u.fecha_ingreso || diasEntre(u.fecha_ingreso, params.fechaReferencia) >= params.pesos.diasMinCorporativo);
-  });
-  return expertos.length
-    ? { pool: expertos, nota: "; cuenta corporativa: solo compiten expertos corporativos" }
-    : { pool: elegibles, nota: "; cuenta corporativa sin expertos corporativos disponibles: compite cualquiera" };
+    return !u.fecha_ingreso || diasEntre(u.fecha_ingreso, params.fechaReferencia) >= params.pesos.diasMinCorporativo;
+  };
+  const expertos = elegibles.filter((c) => usuarios.get(c.usuario_id)!.segmento_experto === "corporativo" && cumple(c));
+  const bajoTope = expertos.filter((c) => (c.cartera?.corporativo ?? 0) < params.topeGrandes);
+  if (bajoTope.length) return { pool: bajoTope, nota: "; cuenta corporativa: solo compiten expertos corporativos" };
+  const experimentados = elegibles.filter(cumple);
+  // Al desbordar, el tope también aplica: solo quien aún no lo alcanza; si nadie queda por debajo, compiten todos los que cumplen.
+  const sinSaturar = experimentados.filter((c) => (c.cartera?.corporativo ?? 0) < params.topeGrandes);
+  if (expertos.length && experimentados.length) {
+    return { pool: sinSaturar.length ? sinSaturar : experimentados, nota: `; los expertos corporativos ya tienen ${params.topeGrandes} o más cuentas grandes: compiten también otros vendedores con la antigüedad mínima y por debajo del tope` };
+  }
+  return { pool: experimentados.length ? experimentados : elegibles, nota: "; cuenta corporativa sin expertos corporativos disponibles: compite cualquiera" };
 }
 
 /** 3. Reglas de negocio ponderadas: segmento, zona, carga y antigüedad, más restricciones por tamaño/notas. */
