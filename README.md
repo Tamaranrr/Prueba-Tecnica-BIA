@@ -83,22 +83,28 @@ Lo que enseñó la medición:
 
 ## Evaluación de la IA frente a los métodos
 
-Se midió con [scripts/evaluar-ia.mts](scripts/evaluar-ia.mts) sobre los mismos 61 registros asignables (modelo `claude-opus-5-5`, fecha de referencia 2026-10-16):
+Se midió con [scripts/evaluar-ia.mts](scripts/evaluar-ia.mts) sobre los mismos 61 registros asignables (modelo `claude-opus-5-5`, fecha de referencia 2026-10-16). Se hicieron dos rondas: el primer prompt y uno ajustado a partir de lo que mostró la primera.
 
 | Método | Con experto de su segmento | En su zona | Grandes con experto corporativo | Ocupación máxima | Desviación de ocupación |
 |---|---|---|---|---|---|
 | Round-robin | 31 % | 100 % | 3 de 16 | 48 % | 14,3 pts |
 | Balanceo de carga | 26 % | 100 % | 4 de 16 | 48 % | 14,2 pts |
 | Reglas (equilibrado) | 80 % | 70 % | 16 de 16 | 50 % | 11,7 pts |
-| **IA** | **100 %** | 49 % | 16 de 16 | 68 % | 17,3 pts |
+| IA, prompt v1 | 100 % | 49 % | 16 de 16 | 68 % | 17,3 pts |
+| **IA, prompt v2** | 79 % | 67 % | 16 de 16 | 45 % | 10,9 pts |
 
-- **Reglas duras: la IA no rompió ninguna.** 0 respaldos, 0 cuentas grandes a vendedores con menos de 90 días. Era de esperar: solo ve candidatos que ya pasaron los filtros.
-- **No es mejor que las reglas, es otra política.** Su resultado (100 % de segmento, 49 % de zona, desbalance 17 pts) es casi idéntico al del perfil *Experto primero* de las reglas (100 %, 51 %, 16,9 pts). El prompt le dice que el segmento va primero y la carga al final, y eso hizo: concentró las cuentas grandes en la misma experta corporativa (68 % de ocupación). Con los datos actuales la IA aporta **la explicación en lenguaje natural** más que una decisión distinta.
-- **Estable:** al repetir 20 registros eligió al mismo vendedor las 20 veces.
-- **Acuerdo con reglas:** 35 de 61 (57 %). En los 26 distintos, la IA acierta el segmento y reglas no en 12 casos; lo contrario, en ninguno. Los desacuerdos son sobre todo cuentas grandes de Antioquia u Occidente, donde la IA elige a la experta de Centro y reglas al experto de Costa.
-- **Costo y velocidad:** unos 4,4 s y US$0,01 por registro (61 registros: 4,5 min y US$0,61). Es secuencial, por eso tiene tope por corrida.
-- **Lo que no se puede concluir:** las notas con una señal accionable son raras (1 caso de "senior" y 1 de "conoce el sector" entre 61; ambos bien resueltos), así que su manejo de las notas es anecdótico. No hay una asignación "correcta" de referencia, por lo que estas métricas son aproximaciones de lo que negocio dijo querer (experto, zona, balance).
-- **Siguiente paso:** ajustar el prompt para que pese la carga y la zona como el perfil *Equilibrado* y volver a medir con este mismo script.
+**Qué pasó con la primera ronda.** El prompt v1 ordenaba los criterios por importancia (segmento, notas, zona y al final la carga). El modelo lo obedeció al pie de la letra: 100 % de segmento, pero concentró las cuentas grandes en la misma experta corporativa (68 % de ocupación) y casi ignoró la zona. Su resultado era idéntico al del perfil *Experto primero* de las reglas.
+
+**Qué cambió en v2.** El prompt se construye con los mismos pesos del método de reglas (segmento 30, zona 30, carga 60, antigüedad para desempatar) y le pide al modelo puntuar a cada candidato y elegir el mayor total. Ahora el modelo y las reglas persiguen lo mismo y se pueden comparar. La versión del prompt queda en los parámetros de cada ejecución.
+
+**Conclusiones (con las salvedades de abajo).**
+- **Con la misma política, la IA y las reglas llegan casi al mismo lugar.** Segmento 79 % contra 80 %, zona 67 % contra 70 %, y un desbalance algo menor en la IA (10,9 contra 11,7 puntos). Eligen al mismo vendedor en 39 de 61 casos (64 %); en los 22 distintos, la IA acierta el segmento y reglas no en 2 casos, y reglas acierta y la IA no en 3. Son empates razonables, como una cuenta industrial en Centro que la IA da a la experta corporativa de Centro y las reglas al experto industrial de Antioquia.
+- **La IA no rompió ninguna regla dura** en las dos rondas: 0 respaldos y 0 cuentas grandes a vendedores con menos de 90 días. Era de esperar: solo ve candidatos que ya pasaron los filtros.
+- **La IA sigue la política que se le escribe.** Lo que cambió entre v1 y v2 fue el prompt, no el modelo. La política debe definirla negocio, no el modelo.
+- **Lo que aporta frente a las reglas** es la explicación en lenguaje natural de cada decisión y la lectura de notas que las reglas no entienden. Con estos datos, las notas con una señal accionable son raras (1 caso de "senior" y 1 de "conoce el sector" entre 61; ambos bien resueltos en las dos rondas), así que esa ventaja no se pudo medir.
+- **Costo y velocidad:** unos 4,3 s y US$0,012 por registro (61 registros: 4,4 min y US$0,71), secuencial, por eso tiene tope por corrida. Las reglas son instantáneas y gratis. La recomendación es usar *reglas* para el reparto masivo y la IA para los casos con notas ambiguas o cuando se quiera una justificación escrita.
+- **Estabilidad (prompt v1):** al repetir 20 registros eligió al mismo vendedor las 20 veces. No se repitió con v2.
+- **Salvedades:** no hay una asignación "correcta" de referencia, así que las métricas son aproximaciones de lo que negocio dijo querer (experto, zona, balance). Es un solo lote de 61 registros y una sola corrida por prompt.
 
 ## Cómo correrlo
 
@@ -129,7 +135,7 @@ SUPABASE_SERVICE_ROLE_KEY=                            # solo servidor
 | `npm run seed` / `seed:dry` | Carga los CSV normalizados / solo muestra el resumen |
 | `npm run reset` | Vacía la traza y restaura los datos (útil antes de grabar la demo) |
 | `npx tsx --env-file=.env.local scripts/evaluar.mts [fecha] [--fino]` | Mide cada método frente a cómo está hoy la operación y prueba pesos alternativos (solo lee) |
-| `npx tsx --env-file=.env.local scripts/evaluar-ia.mts [fecha] [repeticiones]` | Compara la IA con los métodos (cuesta unos US$0,8 de API) |
+| `npx tsx --env-file=.env.local scripts/evaluar-ia.mts [fecha] [repeticiones]` | Compara la IA con los métodos (cuesta unos US$0,7 de API por corrida) |
 | `npx tsx --env-file=.env.local scripts/probar-ia.mts 3` | Prueba el método de IA sin escribir en la traza |
 
 **Despliegue:** Vercel con las 4 variables de entorno. No usar la integración de Supabase de Vercel (crea otra base).

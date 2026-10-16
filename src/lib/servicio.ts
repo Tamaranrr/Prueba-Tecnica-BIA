@@ -3,7 +3,7 @@ import { calcularCarga, duenosActuales } from "./engine/carga";
 import { evaluarCandidato } from "./engine/filtros";
 import { marcarDuplicadosEnTrabajo } from "./engine/duplicados";
 import { parametros, proponer, razonesRetencion, type DatosMotor } from "./engine/motor";
-import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, proponerIA } from "./ia";
+import { LIMITE_IA_DEFECTO, LIMITE_IA_MAXIMO, MODELO_IA, PROMPT_VERSION, proponerIA } from "./ia";
 import type {
   Actividad, Ausencia, EvaluacionCandidato, Metodo, ParametrosMotor, Registro, ResultadoMotor, Usuario,
 } from "./engine/tipos";
@@ -224,7 +224,7 @@ export async function ejecutar(sol: Solicitud, actorId: unknown, previewId?: unk
     }));
     sinCandidato = prev.resultado.propuestas.length - filas.length;
     retenidos = prev.resultado.retenidos;
-    meta = { tipo: l.tipo, metodo: "ia", parametros: { ...prev.resultado.parametros, ia: { modelo: MODELO_IA, limite: sol.ia?.limite ?? LIMITE_IA_DEFECTO, preview_id: previewId } }, actor, fecha: prev.resultado.parametros.fechaReferencia };
+    meta = { tipo: l.tipo, metodo: "ia", parametros: { ...prev.resultado.parametros, ia: { modelo: MODELO_IA, prompt: PROMPT_VERSION, limite: sol.ia?.limite ?? LIMITE_IA_DEFECTO, preview_id: previewId } }, actor, fecha: prev.resultado.parametros.fechaReferencia };
   } else {
     const { resultado } = planificar(base, sol);
     filas = resultado.propuestas.filter((p) => p.usuario_id !== null).map((p) => ({

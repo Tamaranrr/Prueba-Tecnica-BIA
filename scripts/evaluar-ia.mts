@@ -2,9 +2,9 @@
 //   npx tsx --env-file=.env.local scripts/evaluar-ia.mts [fecha] [repeticiones]
 // Consulta al modelo una vez por registro (y otra vez para medir estabilidad): gasta saldo de API. No escribe en la base.
 import { proponer } from "../src/lib/engine/motor";
-import { segmentoDe, senalesNota } from "../src/lib/engine/segmento";
+import { senalesNota } from "../src/lib/engine/segmento";
 import type { Propuesta, ResultadoMotor } from "../src/lib/engine/tipos";
-import { proponerIA, MODELO_IA } from "../src/lib/ia";
+import { proponerIA, MODELO_IA, PROMPT_VERSION } from "../src/lib/ia";
 import { armarLote, leerTodo } from "../src/lib/servicio";
 
 const fecha = process.argv[2] ?? "2026-10-16";
@@ -39,7 +39,7 @@ const tabla = (nombre: string, m: ReturnType<typeof metricas>) =>
 const lote = (metodo: "round_robin" | "balanceo_carga" | "reglas" | "ia", zona: "estricta" | "preferente") =>
   armarLote(base, { metodo, alcance: { tipo: "pendientes" }, fechaReferencia: fecha, parametros: { zona } });
 
-console.log(`Modelo: ${MODELO_IA} | fecha ${fecha}\n`);
+console.log(`Modelo: ${MODELO_IA} | prompt ${PROMPT_VERSION} | fecha ${fecha}\n`);
 const det: Record<string, ResultadoMotor> = {};
 for (const [m, z] of [["round_robin", "estricta"], ["balanceo_carga", "estricta"], ["reglas", "preferente"]] as const) {
   const l = lote(m, z); det[m] = proponer(m, l.datos, l.params);
