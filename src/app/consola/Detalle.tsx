@@ -44,7 +44,7 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold text-slate-900">{reg.razon_social}</h2>
-            <p className="text-sm text-slate-500">NIT {reg.nit} · {reg.ciudad} · zona {reg.zona ?? "—"} · registro #{reg.id}</p>
+            <p className="text-sm text-slate-500">NIT {reg.nit} · {reg.ciudad} · zona {reg.zona ?? "sin dato"} · registro #{reg.id}</p>
           </div>
           <button className={boton()} onClick={cerrar}>Cerrar</button>
         </div>
@@ -52,8 +52,8 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1 rounded bg-slate-50 p-3 text-sm sm:grid-cols-3">
           <div><dt className="text-xs text-slate-400">Estado</dt><dd>{reg.estado}</dd></div>
           <div><dt className="text-xs text-slate-400">Segmento</dt><dd>{reg.segmento}</dd></div>
-          <div><dt className="text-xs text-slate-400">Sector</dt><dd>{reg.sector ?? "—"}</dd></div>
-          <div><dt className="text-xs text-slate-400">Empleados</dt><dd>{reg.empleados ?? "—"}</dd></div>
+          <div><dt className="text-xs text-slate-400">Sector</dt><dd>{reg.sector ?? "sin dato"}</dd></div>
+          <div><dt className="text-xs text-slate-400">Empleados</dt><dd>{reg.empleados ?? "sin dato"}</dd></div>
           <div><dt className="text-xs text-slate-400">Ingresos</dt><dd>{fmtMoneda(reg.ingresos_estimados)}</dd></div>
           <div><dt className="text-xs text-slate-400">Fuente · creado</dt><dd>{reg.fuente} · {reg.fecha_creacion}</dd></div>
         </dl>
@@ -105,7 +105,7 @@ export function Detalle({ id, datos, actor, fecha, version, cerrar, alCambiar }:
             <select className={`${campo} w-full`} value={destino} onChange={(e) => setDestino(e.target.value ? Number(e.target.value) : "")}>
               <option value="">Elegir vendedor…</option>
               {datos.usuarios.filter((u) => u.rol === "vendedor" && u.id !== reg.dueno_id).map((u) => (
-                <option key={u.id} value={u.id}>{u.nombre} — {u.carga}/{u.capacidad_maxima ?? "?"}{u.activo ? "" : " (inactivo)"}{u.ausencia ? ` (${u.ausencia.motivo})` : ""}</option>
+                <option key={u.id} value={u.id}>{u.nombre}: {u.carga}/{u.capacidad_maxima ?? "?"}{u.activo ? "" : " (inactivo)"}{u.ausencia ? ` (${u.ausencia.motivo})` : ""}</option>
               ))}
             </select>
             <textarea className={`${campo} mt-2 w-full`} rows={2} placeholder="Motivo (obligatorio, queda en la traza)" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
@@ -134,7 +134,7 @@ function Asignacion({ a }: { a: AsignacionTraza }) {
           <table className="w-full text-xs"><thead className="text-left text-slate-400"><tr><th>Candidato</th><th>Carga</th><th>Puntaje</th><th>Detalle</th></tr></thead>
             <tbody>{(a.candidatos ?? []).map((c) => (
               <tr key={c.usuario_id} className={`border-t border-slate-100 ${c.usuario_id === a.usuarios.id ? "bg-emerald-50 font-medium" : ""}`}>
-                <td className="py-1">{c.nombre}</td><td>{c.carga}/{c.capacidad ?? "—"}</td><td>{c.puntaje ?? "—"}</td>
+                <td className="py-1">{c.nombre}</td><td>{c.carga}/{c.capacidad ?? "sin dato"}</td><td>{c.puntaje ?? "sin dato"}</td>
                 <td>{c.elegible ? (c.desglose ? Object.entries(c.desglose).map(([k, v]) => `${k.replaceAll("_", " ")} ${v}`).join(" · ") : "elegible") : <span className="text-red-700">descartado: {c.descartes.join(", ")}</span>}</td></tr>))}</tbody></table>
           <pre className="overflow-auto rounded bg-slate-50 p-2 text-xs">{JSON.stringify(a.parametros, null, 2)}</pre>
           {a.prompt_enviado && (

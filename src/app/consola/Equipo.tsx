@@ -15,9 +15,9 @@ export function Equipo({ datos }: { datos: Datos }) {
             {orden.map((u) => (
               <tr key={u.id} className="border-t border-slate-100 align-top">
                 <td className="py-2 pr-3"><div className="font-medium">{u.nombre}</div><div className="mt-1"><Banderas lista={u.banderas.filter((b) => b !== "zona_normalizada")} /></div></td>
-                <td>{u.rol}</td><td>{u.zona ?? "—"}</td><td>{u.segmento_experto ?? "—"}</td>
-                <td>{u.rol === "admin" ? "—" : <Barra valor={u.carga} max={u.capacidad_maxima} />}</td>
-                <td>{u.fecha_ingreso ?? "—"}</td>
+                <td>{u.rol}</td><td>{u.zona ?? "sin dato"}</td><td>{u.segmento_experto ?? "sin dato"}</td>
+                <td>{u.rol === "admin" ? "no aplica" : <Barra valor={u.carga} max={u.capacidad_maxima} />}</td>
+                <td>{u.fecha_ingreso ?? "sin dato"}</td>
                 <td className="space-x-1">
                   {!u.activo && <Badge tono="rojo">inactivo</Badge>}
                   {u.ausencia && <Badge tono="ambar" titulo={`${u.ausencia.desde} → ${u.ausencia.hasta ?? "sin fecha de fin"}`}>{u.ausencia.motivo}</Badge>}

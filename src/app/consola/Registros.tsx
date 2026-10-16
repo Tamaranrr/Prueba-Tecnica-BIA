@@ -10,7 +10,7 @@ export function Registros({ datos, abrir }: { datos: Datos; abrir: (id: number) 
   const [q, setQ] = useState("");
   const [estado, setEstado] = useState("");
   const [zona, setZona] = useState("");
-  const nombre = (id: number | null) => datos.usuarios.find((u) => u.id === id)?.nombre ?? "—";
+  const nombre = (id: number | null) => datos.usuarios.find((u) => u.id === id)?.nombre ?? "sin dato";
 
   const filas = useMemo(() => datos.registros.filter((r) =>
     (!estado || r.estado === estado) && (!zona || r.zona === zona) &&
@@ -34,9 +34,9 @@ export function Registros({ datos, abrir }: { datos: Datos; abrir: (id: number) 
           <tbody>
             {filas.map((r) => (
               <tr key={r.id} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => abrir(r.id)}>
-                <td className="py-1.5 pr-2">{r.razon_social}</td><td>{r.zona ?? "—"}</td><td>{r.segmento}</td><td>{r.empleados ?? "—"}</td><td>{fmtMoneda(r.ingresos_estimados)}</td>
+                <td className="py-1.5 pr-2">{r.razon_social}</td><td>{r.zona ?? "sin dato"}</td><td>{r.segmento}</td><td>{r.empleados ?? "sin dato"}</td><td>{fmtMoneda(r.ingresos_estimados)}</td>
                 <td><Badge tono={TONO_ESTADO[r.estado as keyof typeof TONO_ESTADO]}>{r.estado}</Badge></td>
-                <td>{r.estado === "nuevo" || r.estado === "descartado" ? "—" : nombre(r.dueno_id)}</td>
+                <td>{r.estado === "nuevo" || r.estado === "descartado" ? "sin dueño" : nombre(r.dueno_id)}</td>
                 <td><Banderas lista={r.banderas.filter((b) => ["posible_duplicado", "pidio_no_insistir", "base_sin_validar"].includes(b))} /></td>
               </tr>
             ))}

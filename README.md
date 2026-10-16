@@ -120,19 +120,16 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 
 ## Uso de IA en el desarrollo
 
-Trabajé con Claude Code. Primero pedí un plan y recién después código; fui decidiendo con él los supuestos sobre los datos y revisé cada resultado (pruebas y recorrido en el navegador) antes de avanzar.
+Trabajé con Claude Code como entorno principal, con este método: **primero el plan y recién después el código**, una decisión mía por cada ambigüedad de los datos, y verificación de cada paso (pruebas, llamadas reales a la API y recorrido de la consola en el navegador) antes de avanzar. La IA propuso; yo decidí, cuestioné y fijé el orden.
 
-Estos son dos prompts míos, **tal cual**, de los momentos en que más me sirvió:
+Estos son mis mensajes, **tal cual** los escribí, en los momentos donde mi decisión cambió el rumbo:
 
-**1. Planificar antes de codificar**
-
-> El anterior enunciado es para realizar una prueba, vamos primero a mapear que es lo que vamos a hacer , como lo vamos a  hacer y como funcionara.Despues de tener un plan hecho miramos si codificamos
-
-**2. Decidir los supuestos sobre los datos sucios** (respuesta a una lista de decisiones que me propuso)
-
-> Datos sucios: mi propuesta es normalizar al cargar y marcar lo dudoso con banderas en lugar de borrarlo. Así la traza explica por qué un registro se asignó o quedó retenido. (Me gusta hazlo asi)
-> Zona Bogotá: ¿se manda a Centro? Es lo lógico, pero es una suposición que documentaría en el README. (Si, seria lo logico)
-> ¿Qué cuenta como carga de un vendedor? Propongo los registros cuyo último usuario en la actividad es él y cuyo estado es asignado o en_gestion. (Explicame bien esto )
-> Repositorio: me diste la URL de Tamaranrr/Prueba-Tecnica-BIA. Para subir código necesito que Git quede autenticado con esa cuenta. Cuando lleguemos ahí te indico cómo. (Dale)
-
-**Por qué me sirvieron:** el primero evitó empezar a codificar sin entender los datos; gracias a eso descubrimos que no existía una columna de dueño y que la carga había que calcularla. El segundo convirtió las ambigüedades de los CSV en decisiones explícitas y documentadas (tabla de [Supuestos](#supuestos-revisables)).
+| Momento | Mi mensaje | Qué cambió en el proyecto |
+|---|---|---|
+| Antes de escribir una línea | *"vamos primero a mapear que es lo que vamos a hacer , como lo vamos a  hacer y como funcionara. Despues de tener un plan hecho miramos si codificamos"* | Se analizaron los CSV antes de diseñar. Ahí apareció que no existía una columna de dueño del registro, así que la carga se calcula desde la actividad. |
+| Datos sucios | *"(Me gusta hazlo asi)"* sobre normalizar al cargar y marcar con banderas en lugar de borrar | Nada se descarta en silencio: cada ajuste queda como bandera y la fila original se conserva. |
+| Zona Bogotá | *"(Si, seria lo logico)"* | Bogotá se trata como Centro y queda documentado en Supuestos. |
+| No aceptar lo que no entiendo | *"¿Qué cuenta como carga de un vendedor? ... (Explicame bien esto )"* | Pedí la explicación con datos reales antes de aprobar la definición de carga, que es la base de los tres métodos. |
+| Cuestionar una dependencia | *"Es necesaria una api key de claude?"* | Quedó claro que solo el método de IA la necesita; el resto del motor funciona sin ella. |
+| Corregir un paso de la integración | *"Igualmente hice la integracion con supabase en optional integrations, le doy a deploy?"* | La integración habría creado una base de datos nueva y vacía; se quitó antes de desplegar. |
+| Prioridades | *"Primero configuremos Git y subamos al repositorio."* · *"Primero hagamos la consola web."* · *"Primero desplegamos en Vercel; guíame."* | Orden de trabajo: código versionado desde temprano, consola antes del método de IA, y despliegue verificado antes de redactar la documentación. |

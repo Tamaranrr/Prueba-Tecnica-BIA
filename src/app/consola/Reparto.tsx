@@ -33,7 +33,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
   const [error, setError] = useState<string | null>(null);
   const [abiertos, setAbiertos] = useState<Set<number>>(new Set());
 
-  const nombre = (id: number | null) => datos.usuarios.find((u) => u.id === id)?.nombre ?? "—";
+  const nombre = (id: number | null) => datos.usuarios.find((u) => u.id === id)?.nombre ?? "sin dato";
   const regs = new Map(datos.registros.map((r) => [r.id, r]));
   const pendientes = datos.registros.filter((r) => r.estado === "nuevo");
   const vendedoresConCarga = datos.usuarios.filter((u) => u.rol === "vendedor" && u.carga > 0);
@@ -77,7 +77,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
           {alcance === "usuario" && (
             <select className={`${campo} mt-2 w-full`} value={origen} onChange={(e) => setOrigen(e.target.value ? Number(e.target.value) : "")}>
               <option value="">Elegir vendedor…</option>
-              {vendedoresConCarga.map((u) => <option key={u.id} value={u.id}>{u.nombre} — {u.carga} registros{u.activo ? "" : " (inactivo)"}</option>)}
+              {vendedoresConCarga.map((u) => <option key={u.id} value={u.id}>{u.nombre}: {u.carga} registros{u.activo ? "" : " (inactivo)"}</option>)}
             </select>
           )}
         </Tarjeta>
@@ -145,7 +145,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                 <thead className="sticky top-0 bg-white text-xs uppercase text-slate-400"><tr><th className="py-1">Empresa</th><th>Zona</th><th>Segmento</th><th>Empl.</th><th>Fuente</th><th>Alertas</th></tr></thead>
                 <tbody>{pendientes.map((r) => (
                   <tr key={r.id} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => abrir(r.id)}>
-                    <td className="py-1.5 pr-2">{r.razon_social}</td><td>{r.zona ?? "—"}</td><td>{r.segmento}</td><td>{r.empleados ?? "—"}</td><td>{r.fuente}</td>
+                    <td className="py-1.5 pr-2">{r.razon_social}</td><td>{r.zona ?? "sin dato"}</td><td>{r.segmento}</td><td>{r.empleados ?? "sin dato"}</td><td>{r.fuente}</td>
                     <td><Banderas lista={r.banderas.filter((b) => ["posible_duplicado", "pidio_no_insistir", "base_sin_validar", "sin_zona"].includes(b))} /></td></tr>))}</tbody>
               </table>
             </div>
@@ -157,7 +157,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
             <Tarjeta>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <Titulo>Previsualización — no guardada</Titulo>
+                  <Titulo>Previsualización (no guardada)</Titulo>
                   <p className="text-sm text-slate-700">
                     <b className="text-emerald-700">{prev.resumen.asignables}</b> se asignarían · <b className="text-amber-700">{prev.resumen.retenidos}</b> retenidos · <b className="text-red-700">{prev.resumen.sin_candidato}</b> sin candidato
                     {prev.sin_procesar ? <> · <b>{prev.sin_procesar}</b> quedan para la siguiente corrida</> : null}
@@ -189,7 +189,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                       return (
                         <Fragment key={p.registro_id}>
                           <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => alternar(p.registro_id)}>
-                            <td className="py-1.5 pr-2">{abierto ? "▾" : "▸"} {r.razon_social}</td><td>{r.zona ?? "—"}</td><td>{p.segmento}</td>
+                            <td className="py-1.5 pr-2">{abierto ? "▾" : "▸"} {r.razon_social}</td><td>{r.zona ?? "sin dato"}</td><td>{p.segmento}</td>
                             {alcance === "usuario" && <td>{nombre(p.dueno_actual)}</td>}
                             <td className={p.usuario_id ? "font-medium text-slate-900" : "text-red-700"}>{p.usuario_id ? nombre(p.usuario_id) : "Sin candidato"}</td>
                             <td className="text-right"><Banderas lista={p.banderas_decision} /></td>
@@ -205,7 +205,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar }: {
                               <table className="w-full text-xs"><thead className="text-slate-400"><tr><th className="text-left">Candidato</th><th className="text-left">Carga</th><th className="text-left">Puntaje</th><th className="text-left">Detalle</th></tr></thead>
                                 <tbody>{p.candidatos.map((c) => (
                                   <tr key={c.usuario_id} className={`border-t border-slate-200 ${c.usuario_id === p.usuario_id ? "bg-emerald-50 font-medium" : ""}`}>
-                                    <td className="py-1">{c.nombre}</td><td>{c.carga}/{c.capacidad ?? "—"}</td><td>{c.puntaje ?? "—"}</td>
+                                    <td className="py-1">{c.nombre}</td><td>{c.carga}/{c.capacidad ?? "sin dato"}</td><td>{c.puntaje ?? "sin dato"}</td>
                                     <td>{c.elegible ? (c.desglose ? Object.entries(c.desglose).map(([k, v]) => `${k.replaceAll("_", " ")} ${v}`).join(" · ") : "elegible") : <span className="text-red-700">descartado: {c.descartes.join(", ")}</span>}</td></tr>))}</tbody></table>
                             </td></tr>
                           )}

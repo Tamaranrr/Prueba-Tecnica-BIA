@@ -48,4 +48,4 @@ export const METODOS = [
 export const fmtFecha = (iso: string) =>
   new Date(iso).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Bogota" });
 export const fmtMoneda = (n: number | null) =>
-  n === null ? "—" : n >= 1e9 ? `$${(n / 1e9).toFixed(1)} MM` : `$${(n / 1e6).toFixed(0)} M`;
+  n === null ? "sin dato" : n >= 1e9 ? `$${(n / 1e9).toFixed(1)} MM` : `$${(n / 1e6).toFixed(0)} M`;
