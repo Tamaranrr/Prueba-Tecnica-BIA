@@ -1,36 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Motor de asignación comercial
 
-## Getting Started
+Prueba técnica BIA · AI Engineer · **Opción A**.
 
-First, run the development server:
+Reparte los registros nuevos entre los vendedores con cuatro métodos (tres deterministas y uno con IA), una consola para operarlo y una traza completa en base de datos que responde a la pregunta *"¿por qué la empresa X terminó con el vendedor Y?"*.
+
+| | |
+|---|---|
+| **Demo desplegada** | https://prueba-tecnica-bia.vercel.app |
+| **Video** | _(enlace)_ |
+| **Guion del video** | [docs/guion-demo.md](docs/guion-demo.md) |
+
+> La consola **no tiene login** (el reto no lo pide). Cualquiera con la URL puede ejecutar asignaciones y el método de IA consume saldo de API. Ver [Limitaciones](#limitaciones-conocidas).
+
+---
+
+## Qué hace
+
+1. **Motor** con cuatro métodos, todos con la misma interfaz y los mismos filtros duros previos:
+   - **Round-robin ponderado**: rota entre los vendedores elegibles; quien tiene más cupo libre recibe más turnos.
+   - **Balanceo de carga**: cada registro va al menos ocupado (`carga ÷ capacidad`). Nivela a los nuevos con los antiguos.
+   - **Reglas de negocio**: puntúa segmento experto, zona, carga y antigüedad (pesos configurables). Las cuentas corporativas no van a vendedores con menos de N días y las notas *"alguien senior"* / *"que conozca el sector"* se aplican como restricción.
+   - **IA** (Claude): lee el registro completo, notas incluidas, y elige entre los candidatos que ya pasaron los filtros.
+2. **Consola** (`/`): ver pendientes, elegir y configurar el método, **previsualizar** sin guardar, ejecutar, reasignar (todo lo de un vendedor o un registro suelto) y abrir un registro para ver por qué quedó donde está.
+3. **Traza**: cada asignación guarda registro, usuario, método, parámetros, quién la ejecutó, cuándo, si reemplazó a otra, el motivo, el puntaje de **todos** los candidatos evaluados y, en el método IA, el **prompt completo con los datos del registro**, la respuesta cruda y el modelo.
+
+## Decisiones de diseño
+
+- **Filtros duros antes de cualquier método.** Un vendedor inactivo, ausente en la fecha, con capacidad 0 o sin definir, sin cupo, que aún no ingresa, líder/admin (salvo que se pida) o de otra zona (en modo estricto) **nunca llega a un método ni al modelo**. Así la IA no puede romper reglas, y esto está cubierto con pruebas para los tres métodos.
+- **Motor puro.** `src/lib/engine` recibe datos y devuelve propuestas; no toca la base. Por eso previsualizar y ejecutar usan exactamente el mismo cálculo.
+- **La IA propone, el código dispone.** El modelo solo ve candidatos válidos. Su respuesta se valida contra la lista y contra un esquema; si falla (formato, rechazo, vendedor fuera de lista, error de red) el registro se asigna por balanceo de carga y queda marcado `ia_respaldo`. Nunca se deja un registro colgado. Los fallos de cuenta (sin saldo, key inválida) abortan en vez de repartir en silencio.
+- **Se ejecuta lo previsualizado.** El modelo no es determinista: la previsualización de IA se guarda (con su prompt y respuesta) y *Ejecutar* aplica esa, no hace una consulta nueva. Se revalida que nada haya cambiado y caduca en 1 hora.
+- **Traza inmutable.** Reasignar nunca sobrescribe: crea una fila nueva con `reemplaza_a` y marca la anterior como no vigente. Un índice único parcial garantiza una sola asignación vigente por registro.
+- **Datos sucios marcados, no escondidos.** Se normaliza al cargar y cada cambio queda como bandera (`zona_normalizada`, `zona_inferida_por_ciudad`, `sin_capacidad`, `equipo_inexistente:99`…), junto con la fila original en `datos_originales`.
+- **Retener en vez de adivinar.** Los duplicados y los registros que pidieron *"que no insistiéramos"* no se asignan: aparecen como **retenidos para revisión humana**, con su razón.
+- **Reproducible.** Cada ejecución guarda la *fecha de referencia* usada para ausencias y antigüedad.
+- **Seguridad.** Todo el acceso a Supabase es desde el servidor con la secret key; las tablas tienen RLS activo y sin políticas, así que la key pública no lee nada. Solo un admin o líder activo puede ejecutar.
+
+## Supuestos (revisables)
+
+| Tema | Decisión |
+|---|---|
+| **Carga de un vendedor** | No hay columna de dueño en `registros`. Se calcula así: registros en `asignado`/`en_gestion` cuyo **último movimiento en `actividad`** es del vendedor; una asignación vigente del motor manda sobre la actividad histórica. |
+| **Zona Bogotá** | No es zona de ningún equipo → se trata como **Centro**. |
+| **Zona vacía** | Se infiere por la ciudad (zona más frecuente entre registros de esa ciudad) y se marca `zona_inferida_por_ciudad`. |
+| **Segmento de la cuenta** | Corporativo si ≥ 500 empleados o ≥ 30.000 M COP de ingresos; industrial si el sector es fabril/agro/construcción; el resto, pyme. Umbrales en `src/lib/engine/segmento.ts`. |
+| **Duplicados** | Mismo NIT, o misma razón social ignorando mayúsculas y puntuación. **No** se ignora el sufijo societario: "X S.A.S." y "X Ltda." son empresas distintas. El de menor id es el original. |
+| **Capacidad vacía o 0** | No puede recibir. Se muestra como bandera en la consola. |
+| **Usuario sin zona / equipo inexistente** | Hereda la zona del equipo si la tiene; el equipo 99 inexistente se anula con bandera. |
+| **Líderes** | No reciben por defecto (opción en la consola). |
+| **Ausencia sin fecha de fin** | Se considera abierta (sigue ausente). |
+| **Quien sale** | Un vendedor inactivo conserva sus cuentas hasta que se reasignan; no recibe nuevas. |
+
+## Cómo correrlo
+
+Requisitos: Node 20+, un proyecto de Supabase y una API key de Anthropic.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # completar los valores
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+ANTHROPIC_API_KEY=
+NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co   # sin /rest/v1/
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=                            # solo servidor
+# ANTHROPIC_MODEL=claude-opus-5-5                     # opcional
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. En Supabase → **SQL Editor**, ejecutar [supabase/schema.sql](supabase/schema.sql) (crea las tablas; borra las existentes).
+2. Cargar los datos: `npm run seed` (los CSV están en `data/`). `npm run seed:dry` muestra el resumen de normalización sin tocar la base.
+3. `npm run dev` → http://localhost:3000
 
-## Learn More
+| Script | Qué hace |
+|---|---|
+| `npm test` | 19 pruebas del motor (filtros duros, carga, métodos, zona, retención) |
+| `npm run seed` / `seed:dry` | Carga los CSV normalizados / solo muestra el resumen |
+| `npm run reset` | Vacía la traza y restaura los datos (útil antes de grabar la demo) |
+| `npx tsx --env-file=.env.local scripts/probar-ia.mts 3` | Prueba el método de IA sin escribir en la traza |
 
-To learn more about Next.js, take a look at the following resources:
+**Despliegue:** Vercel con las 4 variables de entorno. No usar la integración de Supabase de Vercel (crea otra base).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Todas devuelven JSON; los errores de negocio responden 400 con un mensaje legible.
 
-## Deploy on Vercel
+| Ruta | Para qué |
+|---|---|
+| `GET /api/datos?fecha=` | Registros, equipo, carga y ausencias para la consola |
+| `POST /api/preview` | Simula un reparto sin guardar. Método `ia` guarda la previsualización y devuelve `preview_id` |
+| `POST /api/ejecutar` | Ejecuta y escribe la traza. Requiere `ejecutado_por` (admin o líder activo). Con IA, requiere `preview_id` |
+| `POST /api/reasignar` | Reasignación manual de un registro, con motivo obligatorio |
+| `GET /api/registros/:id` | Datos, actividad y cadena completa de asignaciones |
+| `GET /api/ejecuciones` | Historial de ejecuciones |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Estructura
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/lib/engine/   motor puro: tipos, filtros duros, carga, segmento, métodos, orquestación
+src/lib/ia.ts     prompt, llamada a Claude con salida estructurada, validación y respaldo
+src/lib/servicio.ts  lote, previsualizar, ejecutar, reasignar y escritura de la traza
+src/app/api/      rutas
+src/app/consola/  interfaz
+supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · data/  CSV
+```
+
+## Limitaciones conocidas
+
+- **Sin autenticación.** `ejecutado_por` lo elige quien usa la consola. Lo siguiente sería login por rol.
+- **La IA es secuencial y con tope por corrida** (10 por defecto, 40 máximo): cada decisión cambia la carga de la siguiente y el plan gratuito de Vercel corta a los 60 s. Para volúmenes grandes habría que mover la IA a una cola.
+- **Sin transacciones reales**: `supabase-js` no las ofrece. Si falla a mitad de una ejecución se revierte lo escrito, pero una función SQL (RPC) sería más robusta.
+- **Los umbrales de segmento y los pesos de las reglas son una propuesta**, no están validados con negocio.
+- **No se evaluó la calidad de la IA contra los métodos deterministas** con métricas; es el siguiente paso natural.
+- **Datos personales en el prompt**: se guarda el prompt completo porque negocio lo pidió; en producción habría que fijar retención y control de acceso a esa tabla.
+
+---
+
+## Uso de IA en el desarrollo
+
+Trabajé con Claude Code. Primero pedí un plan y recién después código; fui decidiendo con él los supuestos sobre los datos y revisé cada resultado (pruebas y recorrido en el navegador) antes de avanzar.
+
+Estos son dos prompts míos, **tal cual**, de los momentos en que más me sirvió:
+
+**1. Planificar antes de codificar**
+
+> El anterior enunciado es para realizar una prueba, vamos primero a mapear que es lo que vamos a hacer , como lo vamos a  hacer y como funcionara.Despues de tener un plan hecho miramos si codificamos
+
+**2. Decidir los supuestos sobre los datos sucios** (respuesta a una lista de decisiones que me propuso)
+
+> Datos sucios: mi propuesta es normalizar al cargar y marcar lo dudoso con banderas en lugar de borrarlo. Así la traza explica por qué un registro se asignó o quedó retenido. (Me gusta hazlo asi)
+> Zona Bogotá: ¿se manda a Centro? Es lo lógico, pero es una suposición que documentaría en el README. (Si, seria lo logico)
+> ¿Qué cuenta como carga de un vendedor? Propongo los registros cuyo último usuario en la actividad es él y cuyo estado es asignado o en_gestion. (Explicame bien esto )
+> Repositorio: me diste la URL de Tamaranrr/Prueba-Tecnica-BIA. Para subir código necesito que Git quede autenticado con esa cuenta. Cuando lleguemos ahí te indico cómo. (Dale)
+
+**Por qué me sirvieron:** el primero evitó empezar a codificar sin entender los datos; gracias a eso descubrimos que no existía una columna de dueño y que la carga había que calcularla. El segundo convirtió las ambigüedades de los CSV en decisiones explícitas y documentadas (tabla de [Supuestos](#supuestos-revisables)).
