@@ -124,8 +124,8 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
   const cambioPorUsuario = prev ? datos.usuarios.filter((u) => u.rol !== "admin" && (prev.cargaFinal[u.id] ?? 0) !== (prev.cargaInicial[u.id] ?? 0)) : [];
 
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[21rem_1fr]">
-      <div className="min-w-0 space-y-4">
+    <div className="space-y-5">
+      <div className="grid min-w-0 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-[1fr_1.4fr_1fr]">
         <Tarjeta>
           <Titulo>1 · Qué repartir</Titulo>
           <label className="mb-2 flex items-start gap-2 text-sm"><input type="radio" checked={alcance === "pendientes"} onChange={() => setAlcance("pendientes")} className="mt-1" />
@@ -147,7 +147,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
 
         <Tarjeta>
           <Titulo>2 · Método</Titulo>
-          <div className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             {METODOS.map((m) => (
               <label key={m.id} className={`block cursor-pointer rounded-lg border p-3 text-sm ${metodo === m.id ? "border-brand-600 bg-brand-50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" className="mr-2" checked={metodo === m.id} onChange={() => elegirMetodo(m.id)} /><b>{m.nombre}</b>
@@ -213,14 +213,14 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
           </details>
         </Tarjeta>
 
-        <div className="sticky bottom-3 z-10 space-y-3 rounded-xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-        <button className={`${boton("primario")} w-full`} disabled={cargando || !listoParaCorrer} onClick={previsualizar}>
+        <div className="flex flex-wrap items-stretch gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm lg:col-span-2 2xl:col-span-3">
+        <button className={`${boton("primario")} min-w-60`} disabled={cargando || !listoParaCorrer} onClick={previsualizar}>
           {cargando && !progreso ? (metodo === "ia" ? "Consultando a Claude… puede tardar" : "Calculando…") : "Previsualizar reparto"}
         </button>
         {metodo === "ia" && alcance === "pendientes" && (
-          <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-slate-700">
-            <button className={`${boton("secundario")} w-full`} disabled={cargando} onClick={repartirTodo}>Repartir todo con IA ({pendientes.length} pendientes)</button>
-            <p className="mt-2 text-xs text-slate-600">Revisa y reparte todos los pendientes de una vez, por prioridad y sin tope de registros. Consulta al modelo de {OLA_TEXTO} en {OLA_TEXTO} y revalida cada decisión con las reglas duras. Dura cerca de un minuto y no guarda nada hasta que ejecutes.</p>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-slate-700">
+            <button className={`${boton("secundario")} shrink-0`} disabled={cargando} onClick={repartirTodo}>Repartir todo con IA ({pendientes.length} pendientes)</button>
+            <p className="min-w-48 flex-1 text-xs text-slate-600">Revisa y reparte todos los pendientes de una vez, por prioridad y sin tope de registros. Consulta al modelo de {OLA_TEXTO} en {OLA_TEXTO} y revalida cada decisión con las reglas duras. Dura cerca de un minuto y no guarda nada hasta que ejecutes.</p>
           </div>
         )}
         </div>
@@ -250,7 +250,7 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                 <button className={boton("primario")} onClick={() => setAlcance("seleccion")}>Repartir solo estos</button>
               </p>
             )}
-            <TablaRegistros datos={datos} base={pendientes} seleccion={seleccion} setSeleccion={setSeleccion} abrir={abrir} estadoFijo alto="30rem" />
+            <TablaRegistros datos={datos} base={pendientes} seleccion={seleccion} setSeleccion={setSeleccion} abrir={abrir} estadoFijo alto="38rem" />
           </Tarjeta>
         )}
 
