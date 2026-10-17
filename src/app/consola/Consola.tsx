@@ -121,6 +121,7 @@ export function Consola() {
               {fecha !== datos.fecha_datos && <>{" · "}<button className="underline hover:text-white" onClick={() => { setFecha(datos.fecha_datos); cargar(datos.fecha_datos); }}>Fecha de los datos</button></>}
             </p>
           )}
+          <p className="text-[11px] text-slate-500" title="Commit desplegado. Si no coincide con el último, recarga con Ctrl+F5.">Versión {process.env.NEXT_PUBLIC_VERSION}</p>
           <div className="flex items-center gap-3 rounded-lg bg-white/5 p-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-semibold text-white" aria-hidden="true">{ini}</span>
             <div className="min-w-0 flex-1 leading-tight"><p className="truncate text-sm font-medium text-white">{sesion.nombre}</p><p className="text-xs text-slate-400">{sesion.rol}</p></div>
