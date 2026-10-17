@@ -41,3 +41,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Guion del video: se entrega aparte, no va en el repositorio
+docs/guion-demo.md

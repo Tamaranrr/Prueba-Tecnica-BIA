@@ -7,8 +7,6 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
 | | |
 |---|---|
 | **Demo desplegada** | https://prueba-tecnica-bia.vercel.app |
-| **Video** | _(enlace)_ |
-| **Guion del video** | [docs/guion-demo.md](docs/guion-demo.md) |
 
 > La consola exige **ingreso con correo y clave** (admin o líder). Las claves de los revisores se entregan por separado: no están en el repositorio. Ver [Seguridad](#decisiones-de-diseño) y [Limitaciones](#limitaciones-conocidas).
 
@@ -250,8 +248,16 @@ Estos son dos de mis prompts, **tal cual** los escribí (con mis errores de tipe
 
 *Por qué sirvió:* en vez de dar el trabajo por terminado, pedí comprobarlo contra el enunciado. Salieron, entre otras cosas, que el repositorio estaba público cuando la prueba pide privado, que "Ejecutar" podía aplicar una configuración distinta de la previsualizada, que los filtros no permitían repartir lo filtrado, que un duplicado ya trabajado se asignaba a ciegas y que un filtro por dueño mostraba registros descartados. Todo se corrigió y quedó con pruebas.
 
-**2. Atacar primero lo más débil: umbrales y pesos**
+**2. Probar el reparto con el caso real y exigir que se contemplara todo lo que importa**
 
-> Empezemos con lo que esta debil, primero empecemos conumbrales de segmeno y pesos.
+> Hice una prueba pero el caso no se soluciono, porque no estamos comntemplando ni la antiguedad de el asesor, que tan grande es la empresa, si el asesor esta o no en ausencia y tampoco los datos de la actividad.
+>
+> Se debe verificar completamente que tiene el ususario actualmente que es lo que tiene ya asignado para asignar con ia
+>
+> Se debe verificar el segmento teniendo relevancia primero la industria, despues la corporativa y por ultimo las pymes, claramente por un tema de ingresos.
+>
+> El estado de la tabla, debemos dejarlo con , estado autoasignado con color azul
+>
+> Vamos a mirar un plan primero antes de codificar o cambiarl algo
 
-*Por qué sirvió:* la auditoría del prompt 1 dejó una lista de lo que seguía débil, y yo elegí empezar por lo que más pesaba sobre el reparto: los umbrales de segmento y los pesos eran supuestos de la IA, no medidos. Se midieron con los datos reales ([scripts/evaluar.mts](scripts/evaluar.mts)): el corte de 500 empleados estaba mal (dejaba fuera a las de 420, que son del grupo grande) y pasó a 300 empleados o 18.000 M COP; con distintos pesos, las cuentas grandes con experto corporativo variaban entre 7 y 16 de 16, así que dejaron de depender de un peso y pasaron a una regla explícita (ahora siempre 16 de 16); y los pesos por defecto cambiaron a 30/30/60/10 (cuentas en su zona de 51 % a 70 %, desbalance de 16,9 a 11,7 puntos). Ver [Cómo se eligieron los umbrales y pesos](#cómo-se-eligieron-los-umbrales-y-pesos).
+*Por qué sirvió:* en vez de aceptar que el motor "funcionaba", lo probé con el caso real y vi que decidía sin mirar a la persona: ignoraba su antigüedad, el tamaño de la cuenta, sus ausencias y lo que ya tenía asignado. Lo dije como criterios de negocio y pedí un plan antes de tocar el código. De ahí salieron, con una decisión mía por cada ambigüedad (cómo se define el segmento, qué fecha es "hoy", cuántos días antes de una ausencia, qué hacer con quien está en rampa): la **cartera de cada vendedor** que también ve la IA, los **niveles de antigüedad**, la **fecha de operación**, el **orden de reparto** por segmento (corporativo, industrial, pyme) y el estado **autoasignado**. Después se midió con un cálculo independiente del motor: cero reglas duras rotas con los cuatro métodos y las cuentas grandes repartidas entre 5 o 6 personas en vez de concentradas en una (ver [Medición con las reglas finales](#medición-con-las-reglas-finales)).
