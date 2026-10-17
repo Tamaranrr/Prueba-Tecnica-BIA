@@ -5,7 +5,7 @@ import { api, METODOS, type Datos, type Preview } from "@/lib/cliente";
 import { explicarAsignacion } from "@/lib/engine/explicar";
 import { PARAMETROS_DEFECTO, PERFILES_PESOS, PESOS_DEFECTO } from "@/lib/engine/tipos";
 import { TablaRegistros } from "./TablaRegistros";
-import { TablaCandidatos } from "./Candidatos";
+import { CandidatosSimple } from "./Candidatos";
 import { IconoFlecha } from "./iconos";
 import { Avatar, Badge, Banderas, BarraOcupacion, LecturaNota, boton, campo, Tarjeta, Titulo } from "./ui";
 
@@ -344,8 +344,8 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                             <p className="flex flex-wrap items-center gap-2 text-xs text-slate-600">Lo que se leyó en la nota: <LecturaNota senales={p.senales} /><span className="italic">{p.senales.razon}</span></p>
                           )}
                           <details>
-                            <summary className="cursor-pointer text-xs font-medium text-brand-700">Ver a los demás candidatos y por qué quedaron fuera</summary>
-                            <div className="mt-2"><TablaCandidatos candidatos={p.candidatos} elegidoId={p.usuario_id} /></div>
+                            <summary className="cursor-pointer text-xs font-medium text-brand-700">Ver quiénes más competían y quiénes no podían</summary>
+                            <div className="mt-2"><CandidatosSimple candidatos={p.candidatos} elegidoId={p.usuario_id} /></div>
                           </details>
                         </div>
                       )}

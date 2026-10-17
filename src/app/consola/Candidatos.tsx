@@ -59,3 +59,55 @@ export function TablaCandidatos({ candidatos, elegidoId }: { candidatos: Evaluac
     </>
   );
 }
+
+/** Versión corta de un descarte, para una lista que se lee de corrido. */
+function descarteCorto(d: string): string {
+  if (/^cuenta_corporativa_pide/.test(d)) return "lleva menos de 2 años y la cuenta es grande";
+  if (/^en_rampa/.test(d)) return "es nuevo: solo recibe cuentas pequeñas";
+  if (/^se_ausenta_el_/.test(d)) return textoDescarte(d).replace(/^se ausenta el (\d\d\/\d\d).*$/, "se ausenta el $1");
+  if (/^ausente\(/.test(d)) return textoDescarte(d);
+  if (/^sin_capacidad|capacidad/.test(d)) return "sin capacidad definida";
+  if (d === "inactivo") return "está inactivo";
+  return textoDescarte(d);
+}
+
+/**
+ * Quiénes competían por una cuenta, dicho sin tecnicismos: a la izquierda quienes podían recibirla (el elegido marcado)
+ * y a la derecha quienes no, con una sola razón corta cada uno. La tabla técnica completa queda en el detalle del registro.
+ */
+export function CandidatosSimple({ candidatos, elegidoId }: { candidatos: EvaluacionCandidato[]; elegidoId: number | null }) {
+  const visibles = candidatos.filter((c) => !c.descartes.some((d) => d.startsWith("rol_")));
+  const pueden = visibles.filter((c) => c.elegible).sort((a, b) => Number(b.usuario_id === elegidoId) - Number(a.usuario_id === elegidoId) || (a.carga / (a.capacidad || 1)) - (b.carga / (b.capacidad || 1)));
+  const noPueden = visibles.filter((c) => !c.elegible);
+  const razon = (c: EvaluacionCandidato) => [...new Set(c.descartes.map(descarteCorto))].filter((x, _i, arr) => !(x.startsWith("es nuevo") && arr.some((y) => y.startsWith("lleva menos")))).join("; ");
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-slate-600">Podían recibirla ({pueden.length})</p>
+        <ul className="space-y-1">
+          {pueden.map((c) => {
+            const elegido = c.usuario_id === elegidoId;
+            return (
+              <li key={c.usuario_id} className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-sm ${elegido ? "bg-emerald-50 ring-1 ring-emerald-200" : "bg-white ring-1 ring-slate-100"}`}>
+                <span className="min-w-0 truncate">{elegido && <span className="mr-1 text-emerald-700">✓</span>}<span className={elegido ? "font-semibold text-slate-900" : "text-slate-700"}>{c.nombre}</span></span>
+                <span className="shrink-0 text-xs text-slate-500">{c.carga} de {c.capacidad ?? "?"} cuentas{elegido && <b className="ml-2 text-emerald-700">elegido</b>}</span>
+              </li>
+            );
+          })}
+          {pueden.length === 0 && <li className="text-xs text-slate-500">Nadie podía recibirla.</li>}
+        </ul>
+      </div>
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-slate-600">No podían ({noPueden.length})</p>
+        <ul className="space-y-1">
+          {noPueden.map((c) => (
+            <li key={c.usuario_id} className="rounded-lg bg-white px-2.5 py-1.5 text-sm ring-1 ring-slate-100">
+              <span className="text-slate-700">{c.nombre}</span> <span className="text-xs text-slate-500">· {razon(c)}</span>
+            </li>
+          ))}
+          {noPueden.length === 0 && <li className="text-xs text-slate-500">Nadie quedó fuera.</li>}
+        </ul>
+      </div>
+    </div>
+  );
+}
