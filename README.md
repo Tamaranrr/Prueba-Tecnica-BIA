@@ -238,7 +238,7 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 
 Trabajé con Claude Code como entorno principal y con un método: **primero el plan y recién después el código**, una decisión mía por cada ambigüedad de los datos, y verificación de cada paso (pruebas, llamadas reales a la API y recorrido de la consola en el navegador) antes de avanzar. La IA propuso; yo decidí, cuestioné y fijé el orden.
 
-Este es uno de mis prompts, **tal cual** lo escribí (con mis errores de tipeo), del momento en que más me sirvió:
+Este es uno de mis prompts, **tal cual** lo escribí, del momento en que más me sirvió:
 
 **Probar el reparto con el caso real y exigir que se contemplara todo lo que importa**
 
