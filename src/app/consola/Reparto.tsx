@@ -1,11 +1,25 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { api, METODOS, type Datos, type Preview } from "@/lib/cliente";
+import { explicarAsignacion } from "@/lib/engine/explicar";
 import { PARAMETROS_DEFECTO, PERFILES_PESOS, PESOS_DEFECTO } from "@/lib/engine/tipos";
 import { TablaRegistros } from "./TablaRegistros";
 import { TablaCandidatos } from "./Candidatos";
-import { Banderas, Badge, Barra, LecturaNota, boton, campo, Tarjeta, Titulo } from "./ui";
+import { IconoFlecha } from "./iconos";
+import { Avatar, Badge, Banderas, BarraOcupacion, LecturaNota, boton, campo, Tarjeta, Titulo } from "./ui";
+
+const ResumenCifra = ({ valor, etiqueta, tono }: { valor: number; etiqueta: string; tono: string }) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-4"><p className={`text-3xl font-bold tabular-nums ${tono}`}>{valor}</p><p className="mt-1 text-xs text-slate-500">{etiqueta}</p></div>
+);
+/** Las razones de retención llegan como códigos (duplicado_de_21); aquí se dicen como las diría una persona. */
+function razonLegible(z: string): string {
+  let m: RegExpMatchArray | null;
+  if ((m = z.match(/^duplicado_de_(\d+)$/))) return `duplicado de la empresa #${m[1]}`;
+  if ((m = z.match(/^duplicado_en_(\w+?)_(\d+)$/))) return `parece duplicado de una empresa ${m[1].replaceAll("_", " ")} (#${m[2]})`;
+  if (z === "pidio_no_insistir" || z === "nota_no_contactar") return "pidió que no insistan";
+  return z.replaceAll("_", " ");
+}
 
 type Alcance = "pendientes" | "seleccion" | "usuario" | "frias";
 const RETENER = [
@@ -257,18 +271,21 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
         {prev && (
           <>
             <Tarjeta>
-              <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <Titulo>Previsualización (no guardada){todo ? " · repartir todo con IA" : ""}</Titulo>
-                  <p className="text-sm text-slate-700">
-                    <b className="text-emerald-700">{prev.resumen.asignables}</b> se asignarían · <b className="text-amber-700">{prev.resumen.retenidos}</b> retenidos · <b className="text-red-700">{prev.resumen.sin_candidato}</b> sin candidato
-                    {prev.sin_procesar ? <> · <b>{prev.sin_procesar}</b> quedan para la siguiente corrida</> : null}
-                  </p>
+                  <Titulo>Previsualización{todo ? " · repartir todo con IA" : ""}</Titulo>
+                  <p className="text-sm text-slate-600">Así quedaría el reparto. <b>Todavía no se guardó nada</b>: revisa y pulsa Ejecutar.</p>
                 </div>
                 <div className="flex gap-2">
                   <button className={boton()} onClick={() => { setPrev(null); setPrevSol(null); }}>Descartar</button>
-                  <button className={boton("peligro")} disabled={cargando || !prev.resumen.asignables || !actor || desactualizada} onClick={ejecutar}>Ejecutar reparto</button>
+                  <button className={boton("primario")} disabled={cargando || !prev.resumen.asignables || !actor || desactualizada} onClick={ejecutar}>Ejecutar reparto</button>
                 </div>
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <ResumenCifra valor={prev.resumen.asignables} etiqueta="se asignarían" tono="text-emerald-700" />
+                <ResumenCifra valor={prev.resumen.retenidos} etiqueta="retenidos para revisión" tono="text-amber-700" />
+                <ResumenCifra valor={prev.resumen.sin_candidato} etiqueta="sin vendedor válido" tono={prev.resumen.sin_candidato ? "text-rose-700" : "text-slate-900"} />
+                <ResumenCifra valor={prev.sin_procesar ?? 0} etiqueta="quedan para la siguiente corrida" tono="text-slate-900" />
               </div>
               {prev.avisos?.map((a) => <p key={a} role="status" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{a}</p>)}
               {usarNotas && prev.notas && prev.notas.distintas > 0 && (
@@ -279,62 +296,89 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                   Cambiaste la configuración después de previsualizar. Lo que ves ya no es lo que se ejecutaría: pulsa <b>Previsualizar reparto</b> otra vez.
                 </p>
               )}
-              <h3 className="mt-4 mb-2 text-sm font-semibold text-slate-600">Carga por vendedor (actual + lo nuevo)</h3>
-              <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                {cambioPorUsuario.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between gap-2 text-sm"><span className="truncate">{u.nombre}</span>
-                    <Barra valor={prev.cargaInicial[u.id] ?? 0} extra={(prev.cargaFinal[u.id] ?? 0) - (prev.cargaInicial[u.id] ?? 0)} max={u.capacidad_efectiva} /></div>
-                ))}
-              </div>
+              {cambioPorUsuario.length > 0 && (
+                <>
+                  <h3 className="mt-5 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Cómo queda la carga de quienes reciben</h3>
+                  <div className="grid gap-x-8 gap-y-3 md:grid-cols-2">
+                    {cambioPorUsuario.map((u) => (
+                      <div key={u.id}>
+                        <p className="mb-1 flex items-center gap-2 text-sm text-slate-700"><Avatar nombre={u.nombre} tam={22} />{u.nombre}</p>
+                        <BarraOcupacion valor={prev.cargaInicial[u.id] ?? 0} extra={(prev.cargaFinal[u.id] ?? 0) - (prev.cargaInicial[u.id] ?? 0)} max={u.capacidad_efectiva} />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </Tarjeta>
 
             <Tarjeta>
-              <Titulo>Propuesta registro por registro</Titulo>
-              <div className="max-h-[36rem] overflow-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="sticky top-0 bg-white text-xs uppercase text-slate-400"><tr><th className="py-1">Empresa</th><th>Zona</th><th>Segmento</th>{alcance !== "pendientes" && <th>Hoy con</th>}<th>Asignar a</th><th></th></tr></thead>
-                  <tbody>
-                    {prev.propuestas.map((p) => {
-                      const r = regs.get(p.registro_id)!;
-                      const abierto = abiertos.has(p.registro_id);
-                      return (
-                        <Fragment key={p.registro_id}>
-                          <tr className="cursor-pointer border-t border-slate-100 hover:bg-slate-50" onClick={() => alternar(p.registro_id)}>
-                            <td className="py-1.5 pr-2">{abierto ? "▾" : "▸"} {r.razon_social}</td><td>{r.zona ?? "sin dato"}</td><td>{p.segmento}</td>
-                            {alcance !== "pendientes" && <td>{p.dueno_actual ? nombre(p.dueno_actual) : "sin dueño"}</td>}
-                            <td className={p.usuario_id ? "font-medium text-slate-900" : "text-red-700"}>{p.usuario_id ? nombre(p.usuario_id) : "Sin candidato"}</td>
-                            <td className="text-right"><Banderas lista={p.banderas_decision} /></td>
-                          </tr>
-                          {abierto && (
-                            <tr className="bg-slate-50"><td colSpan={6} className="px-4 py-3">
-                              <p className="mb-2 text-sm text-slate-700">{p.motivo}</p>
-                              {p.senales && (
-                                <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">Lectura de la nota: <LecturaNota senales={p.senales} /><span className="italic">{p.senales.razon}</span></p>
-                              )}
-                              {p.prompt_enviado && (
-                                <details className="mb-2 text-xs"><summary className="cursor-pointer text-brand-700">Ver prompt completo enviado al modelo{p.modelo ? ` (${p.modelo})` : ""} y su respuesta</summary>
-                                  <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.prompt_enviado}</pre>
-                                  <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-white p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre></details>
-                              )}
-                              <TablaCandidatos candidatos={p.candidatos} elegidoId={p.usuario_id} />
-                            </td></tr>
+              <Titulo>A quién iría cada empresa</Titulo>
+              <ul className="divide-y divide-slate-100">
+                {prev.propuestas.map((p) => {
+                  const r = regs.get(p.registro_id)!;
+                  const abierto = abiertos.has(p.registro_id);
+                  const simple = p.usuario_id ? explicarAsignacion({ metodo: prev.metodo, motivo: p.motivo, usuario_id: p.usuario_id, candidatos: p.candidatos }) : p.motivo;
+                  return (
+                    <li key={p.registro_id}>
+                      <button className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 py-3 text-left hover:bg-slate-50" aria-expanded={abierto} onClick={() => alternar(p.registro_id)}>
+                        <span className="w-4 text-xs text-slate-400">{abierto ? "▾" : "▸"}</span>
+                        <span className="min-w-56 flex-1">
+                          <span className="block font-medium text-slate-900">{r.razon_social}</span>
+                          <span className="block text-xs text-slate-500">{r.zona ?? "zona sin dato"}{alcance !== "pendientes" && <> · hoy con {p.dueno_actual ? nombre(p.dueno_actual) : "nadie"}</>}</span>
+                        </span>
+                        <Badge tono={p.segmento === "corporativo" ? "marca" : p.segmento === "industrial" ? "azul" : "gris"}>{p.segmento}</Badge>
+                        <span className="flex min-w-56 items-center gap-2">
+                          {p.usuario_id
+                            ? <><IconoFlecha tam={14} /><Avatar nombre={nombre(p.usuario_id)} tam={28} /><b className="text-slate-900">{nombre(p.usuario_id)}</b></>
+                            : <Badge tono="rojo">sin vendedor válido</Badge>}
+                        </span>
+                        <Banderas lista={p.banderas_decision} />
+                      </button>
+                      {abierto && (
+                        <div className="mb-3 ml-8 space-y-3 rounded-xl bg-slate-50 p-4 text-sm">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Por qué</p>
+                            <p className="mt-1 text-slate-800">{simple}</p>
+                          </div>
+                          {p.senales && (
+                            <p className="flex flex-wrap items-center gap-2 text-xs text-slate-600">Lo que se leyó en la nota: <LecturaNota senales={p.senales} /><span className="italic">{p.senales.razon}</span></p>
                           )}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {prev.retenidos.length > 0 && (
-                <div className="mt-4 border-t border-slate-200 pt-3">
-                  <h3 className="mb-2 text-sm font-semibold text-amber-700">Retenidos para revisión humana ({prev.retenidos.length})</h3>
-                  {prev.retenidos.map((x) => (
-                    <p key={x.registro_id} className="cursor-pointer text-sm text-slate-700 hover:underline" onClick={() => abrir(x.registro_id)}>
-                      {regs.get(x.registro_id)?.razon_social} <Banderas lista={x.razones} /></p>
-                  ))}
-                </div>
-              )}
+                          <div>
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Quiénes competían</p>
+                            <TablaCandidatos candidatos={p.candidatos} elegidoId={p.usuario_id} />
+                          </div>
+                          {p.prompt_enviado && (
+                            <details className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+                              <summary className="cursor-pointer font-medium text-slate-600">Evidencia técnica para auditoría ({p.modelo ?? "modelo"})</summary>
+                              <p className="mt-2 text-slate-500">La prueba pide poder reconstruir cada decisión de la IA, así que se guarda lo que se le envió y lo que respondió. No hace falta leerlo para operar.</p>
+                              <p className="mt-2 font-medium text-slate-600">Lo que se le envió</p>
+                              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2">{p.prompt_enviado}</pre>
+                              <p className="mt-2 font-medium text-slate-600">Lo que respondió</p>
+                              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </Tarjeta>
+
+            {prev.retenidos.length > 0 && (
+              <Tarjeta>
+                <Titulo>Retenidos para revisión humana ({prev.retenidos.length})</Titulo>
+                <p className="mb-3 text-sm text-slate-600">No se reparten solos: alguien debe decidir qué hacer con cada uno.</p>
+                <ul className="divide-y divide-slate-100">
+                  {prev.retenidos.map((x) => (
+                    <li key={x.registro_id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                      <button className="text-left font-medium text-brand-700 hover:underline" onClick={() => abrir(x.registro_id)}>{regs.get(x.registro_id)?.razon_social}</button>
+                      <span className="flex flex-wrap gap-1">{x.razones.map((z) => <Badge key={z} tono="ambar">{razonLegible(z)}</Badge>)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Tarjeta>
+            )}
           </>
         )}
       </div>
