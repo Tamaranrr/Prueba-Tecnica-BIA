@@ -22,8 +22,14 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
    - **Reglas de negocio**: puntúa segmento experto, zona, carga, antigüedad por nivel y balance de cuentas grandes (pesos configurables, con perfiles). Las cuentas corporativas solo compiten entre expertos corporativos con antigüedad y por debajo del tope, y lo que dicen las notas (senior, experto del sector, necesidad industrial, urgencia) se aplica como restricción o preferencia.
    - **IA** (Claude): lee el registro completo, notas incluidas, y la **cartera actual de cada candidato**, y elige entre los que ya pasaron los filtros.
    - Además, una **IA lee las notas en texto libre** y las traduce a señales que usa el motor ([ver sección](#lectura-de-las-notas-con-ia)).
-2. **Consola** (`/`): ver pendientes, elegir y configurar el método, **previsualizar** sin guardar, ejecutar, reasignar (todo lo de un vendedor, un registro suelto o las cuentas frías) y abrir un registro para ver por qué quedó donde está. La pestaña **Resumen** abre la consola con el estado del día: cuántos pendientes se pueden asignar, y un centro de alertas de calidad (posibles duplicados, quienes pidieron no insistir, cuentas sin vendedor válido, cuentas que esperan 14 días o más, vendedores sin cupo o no disponibles), cada una con el camino para resolverla. La pestaña **Comparar métodos** reparte los mismos pendientes con round-robin, balanceo y reglas, y los pone lado a lado (especialidad, zona, concentración de cuentas grandes, desbalance, reglas duras rotas); la columna de IA sale de la última previsualización guardada para no gastar una consulta al modelo en cada visita, y por línea de comandos: `npx tsx --env-file=.env.local scripts/comparar.mts`. La pestaña Equipo muestra, por vendedor, su nivel, su cartera por segmento, su actividad y su disponibilidad.
-3. **Traza**: cada asignación guarda registro, usuario, método, parámetros, quién la ejecutó, cuándo, si reemplazó a otra, el motivo, el puntaje y la **cartera de todos los candidatos evaluados** al momento de decidir y, en el método IA, el **prompt completo con los datos del registro**, la respuesta cruda y el modelo.
+2. **Consola** (`/`), con navegación lateral y seis secciones:
+   - **Resumen**: el estado del día. Cuántos pendientes se pueden asignar y un centro de alertas de calidad (posibles duplicados, quienes pidieron no insistir, cuentas sin vendedor válido, cuentas que esperan 14 días o más, vendedores sin cupo o no disponibles), cada una con el camino para resolverla.
+   - **Repartir**: elegir qué repartir (todos los pendientes, los seleccionados, todo lo de un vendedor o las cuentas frías), el método y los parámetros; **previsualizar** sin guardar, ejecutar y, con IA, **Repartir todo** de una vez con barra de progreso. La previsualización muestra cifras, la carga que quedaría por vendedor y, por empresa, a quién iría y **por qué en lenguaje simple**, con quiénes más competían y quiénes no podían.
+   - **Comparar métodos**: reparte los mismos pendientes con round-robin, balanceo y reglas y los pone lado a lado (especialidad, zona, concentración de cuentas grandes, desbalance, reglas duras rotas). La columna de IA sale de la última previsualización guardada, para no gastar una consulta al modelo en cada visita. Por línea de comandos: `npx tsx --env-file=.env.local scripts/comparar.mts`.
+   - **Registros**: todas las empresas con su estado, a quién se asignaron, quién lo hizo, cuándo, con qué método y por qué; abrir una empresa responde *"¿por qué este registro terminó acá?"*. Desde ahí también se reasigna a mano, con motivo.
+   - **Equipo comercial**: una ficha por vendedor con su nivel, su carga, la mezcla de su cartera, su actividad y su disponibilidad.
+   - **Historial y auditoría**: cada ejecución con sus parámetros exactos y lo que asignó.
+3. **Traza**: cada asignación guarda registro, usuario, método, parámetros, quién la ejecutó, cuándo, si reemplazó a otra, el motivo, el puntaje y la **cartera de todos los candidatos evaluados** al momento de decidir y, en el método IA, el **prompt completo con los datos del registro**, la respuesta cruda y el modelo. El prompt no estorba en la operación diaria: se consulta al abrir el registro, en su cadena de asignaciones.
 
 ## Decisiones de diseño
 
@@ -129,7 +135,7 @@ Lo que muestran los números, sin adornos:
 - **Los urgentes** pasan de la posición media 31 a la 23 en la cola de 61 con la lectura de notas. Menos que antes porque ahora el orden de reparto es primero por segmento.
 - **Costo de la IA:** unos US$0,04 por los 61 registros. Secuencial tardaba 322 segundos (5,3 s por registro) y por eso tenía tope por corrida. Con **Repartir todo** (olas de 6 consultas en paralelo) tarda unos 74 segundos, sin respaldos y sin reglas duras rotas.
 
-**Cómo llegamos al prompt v4.** El prompt v1 ordenaba los criterios por importancia y el modelo los obedeció al pie de la letra: 100 % de segmento pero las cuentas grandes concentradas en una sola experta. El v2 se construyó con los mismos pesos que las reglas y el v3 sumó las señales de las notas; con ellos la IA igualó a las reglas. El v4 le da la cartera actual de cada candidato, el nivel de antigüedad y las reglas de balance de cuentas grandes. Se compararon Opus 5.5, Sonnet 5.5 y Haiku 5.5 como modelo que decide (ronda con el prompt v3): ninguno dominó y Haiku costó 29 veces menos que Opus, por eso es el modelo por defecto. Se cambia con `ANTHROPIC_MODEL`.
+**Cómo llegamos al prompt v5.** El prompt v1 ordenaba los criterios por importancia y el modelo los obedeció al pie de la letra: 100 % de segmento pero las cuentas grandes concentradas en una sola experta. El v2 se construyó con los mismos pesos que las reglas y el v3 sumó las señales de las notas; con ellos la IA igualó a las reglas. El v4 le da la cartera actual de cada candidato, el nivel de antigüedad y las reglas de balance de cuentas grandes. El v5 le pide una razón de una o dos frases en lenguaje simple, sin puntajes ni identificadores, para que la consola la muestre tal cual. Se compararon Opus 5.5, Sonnet 5.5 y Haiku 5.5 como modelo que decide (ronda con el prompt v3): ninguno dominó y Haiku costó 29 veces menos que Opus, por eso es el modelo por defecto. Se cambia con `ANTHROPIC_MODEL`.
 
 **Repartir todo con IA.** Botón aparte en la pestaña Reparto que no toca la lógica principal. Revisa todos los pendientes de una vez, ordenados por prioridad (segmento, urgencia de las notas, días de espera y tamaño), sin tope de registros. Consulta al modelo de 6 en 6, revalida cada decisión con el estado actual (reglas duras, carga y tope de cuentas grandes), reencola hasta 2 veces y como último recurso usa balanceo. Muestra una barra de progreso en vivo y no guarda nada hasta que se ejecuta. La tabla de pendientes tiene una columna de Prioridad y la pestaña Registros muestra a quién se asignó, quién lo hizo, cuándo, con qué método y una explicación en lenguaje simple.
 
@@ -163,10 +169,11 @@ SESSION_SECRET=                                       # firma las sesiones; mín
 
 | Script | Qué hace |
 |---|---|
-| `npm test` | 55 pruebas (filtros duros, carga, cartera, antigüedad, ausencias, rampa, segmento, métodos, retención, duplicados, cuentas grandes, notas, sesión y claves) |
+| `npm test` | 68 pruebas (filtros duros, carga, cartera, antigüedad, ausencias, rampa, segmento, métodos, retención, duplicados, cuentas grandes, notas, IA en olas, explicaciones, métricas de comparación, sesión y claves) |
 | `npm run claves` | Crea las claves de ingreso de admin y líderes (a un archivo local, sin mostrarlas) |
 | `npm run seed` / `seed:dry` | Carga los CSV normalizados / solo muestra el resumen |
 | `npm run reset` | Vacía la traza y restaura los datos (útil antes de grabar la demo) |
+| `npx tsx --env-file=.env.local scripts/comparar.mts` | Muestra la comparación de métodos que ve la consola (solo lee) |
 | `npx tsx --env-file=.env.local scripts/evaluar-plan.mts [fecha] [--sin-ia]` | Mide los cuatro métodos con las reglas finales y comprueba que ninguna regla dura se rompa (con IA cuesta unos US$0,05) |
 | `npx tsx --env-file=.env.local scripts/evaluar.mts [fecha] [--fino]` | Mide cada método frente a cómo está hoy la operación y prueba pesos alternativos (solo lee) |
 | `npx tsx --env-file=.env.local scripts/evaluar-ia.mts [fecha] [repeticiones]` | Compara la IA con los métodos y mide su estabilidad (con Haiku cuesta unos US$0,05; con Opus, unos US$0,9) |
@@ -190,6 +197,8 @@ Todas devuelven JSON; los errores de negocio responden 400 con un mensaje legibl
 |---|---|
 | `GET /api/datos?fecha=` | Registros, equipo con su cartera y disponibilidad, y la fecha de operación (por defecto la de los datos) |
 | `POST /api/preview` | Simula un reparto sin guardar. Devuelve avisos (por ejemplo, si no se pudieron leer las notas). Método `ia` guarda la previsualización y devuelve `preview_id` |
+| `POST /api/preview-todo` | "Repartir todo con IA": igual que `preview` con IA, sin tope y con avance en vivo (transmite una línea JSON por avance) |
+| `GET /api/comparar?fecha=` | Compara los métodos sobre los mismos pendientes (solo lee; no llama al modelo) |
 | `POST /api/ejecutar` | Ejecuta y escribe la traza; quien ejecuta sale de la sesión. Con IA, requiere `preview_id` |
 | `POST /api/reasignar` | Reasignación manual de un registro, con motivo obligatorio |
 | `GET /api/registros/:id` | Datos, actividad y cadena completa de asignaciones |
@@ -205,7 +214,7 @@ src/lib/notas.ts  lectura de notas: señales estructuradas con Claude
 src/lib/notasServicio.ts  caché de la lectura de notas (tabla notas_senales)
 src/lib/servicio.ts  lote, previsualizar, ejecutar, reasignar y escritura de la traza
 src/app/api/      rutas
-src/app/consola/  interfaz
+src/app/consola/  interfaz (resumen, repartir, comparar métodos, registros, equipo, auditoría)
 supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · data/  CSV
 ```
 
@@ -213,7 +222,7 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 
 - **El ingreso es sencillo a propósito.** Una clave por usuario, sin recuperación de clave, sin segundo factor y sin bloqueo real por intentos (solo un retraso de 0,4 s por fallo). Todos los admin y líderes pueden hacer todo: no hay permisos por equipo. En producción lo natural sería SSO de la empresa (o Supabase Auth) con permisos por rol.
 - **Una sesión no se puede revocar de forma individual** antes de las 8 horas; lo que sí funciona es dar de baja al usuario, que pierde el acceso en la siguiente petición.
-- **La IA es secuencial y con tope por corrida** (10 por defecto, 40 máximo): cada decisión cambia la carga de la siguiente y el plan gratuito de Vercel corta a los 60 s. Para volúmenes grandes habría que mover la IA a una cola.
+- **La IA tiene dos modos.** *Previsualizar* consulta de uno en uno con un tope por corrida (10 por defecto, 40 máximo). *Repartir todo* consulta de 6 en 6 en paralelo y revalida cada decisión con el estado actual; tarda cerca de un minuto con 61 registros, así que depende de que la función pueda correr ese tiempo (`maxDuration`). Para volúmenes mucho mayores habría que mover la IA a una cola.
 - **Sin transacciones reales**: `supabase-js` no las ofrece. Si falla a mitad de una ejecución se revierte lo escrito, pero una función SQL (RPC) sería más robusta.
 - **Umbrales y pesos están medidos sobre estos datos, pero no validados con negocio.** El corte entre cuenta grande y mediana sale de un hueco real en los datos; los pesos son una política (experto, zona o balance) que negocio debe elegir. Por eso la consola trae perfiles.
 - **El segmento industrial se deduce solo del sector** (no hay otro dato) y no está respaldado por el historial: ahí no se vio relación entre sector y experto del dueño.
