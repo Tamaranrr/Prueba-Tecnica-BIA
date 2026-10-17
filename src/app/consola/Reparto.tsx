@@ -337,26 +337,16 @@ export function Reparto({ datos, actor, fecha, abrir, alEjecutar, seleccion, set
                       {abierto && (
                         <div className="mb-3 ml-8 space-y-3 rounded-xl bg-slate-50 p-4 text-sm">
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Por qué</p>
-                            <p className="mt-1 text-slate-800">{simple}</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{p.usuario_id ? `Por qué va con ${nombre(p.usuario_id)}` : "Por qué no se asigna"}</p>
+                            <p className="mt-1 text-base text-slate-800">{simple}</p>
                           </div>
                           {p.senales && (
                             <p className="flex flex-wrap items-center gap-2 text-xs text-slate-600">Lo que se leyó en la nota: <LecturaNota senales={p.senales} /><span className="italic">{p.senales.razon}</span></p>
                           )}
-                          <div>
-                            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Quiénes competían</p>
-                            <TablaCandidatos candidatos={p.candidatos} elegidoId={p.usuario_id} />
-                          </div>
-                          {p.prompt_enviado && (
-                            <details className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
-                              <summary className="cursor-pointer font-medium text-slate-600">Evidencia técnica para auditoría ({p.modelo ?? "modelo"})</summary>
-                              <p className="mt-2 text-slate-500">La prueba pide poder reconstruir cada decisión de la IA, así que se guarda lo que se le envió y lo que respondió. No hace falta leerlo para operar.</p>
-                              <p className="mt-2 font-medium text-slate-600">Lo que se le envió</p>
-                              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2">{p.prompt_enviado}</pre>
-                              <p className="mt-2 font-medium text-slate-600">Lo que respondió</p>
-                              <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-2">{p.respuesta_modelo ?? "(sin respuesta)"}</pre>
-                            </details>
-                          )}
+                          <details>
+                            <summary className="cursor-pointer text-xs font-medium text-brand-700">Ver a los demás candidatos y por qué quedaron fuera</summary>
+                            <div className="mt-2"><TablaCandidatos candidatos={p.candidatos} elegidoId={p.usuario_id} /></div>
+                          </details>
                         </div>
                       )}
                     </li>
