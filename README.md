@@ -7,6 +7,7 @@ Reparte los registros nuevos entre los vendedores con cuatro métodos (tres dete
 | | |
 |---|---|
 | **Demo desplegada** | https://prueba-tecnica-bia.vercel.app |
+| **Video** | https://canva.link/mde27j65chvss70 |
 
 > La consola exige **ingreso con correo y clave** (admin o líder). Las claves de los revisores se entregan por separado: no están en el repositorio. Ver [Seguridad](#decisiones-de-diseño) y [Limitaciones](#limitaciones-conocidas).
 
