@@ -238,17 +238,9 @@ supabase/schema.sql   esquema · scripts/  carga y reset · tests/  pruebas · d
 
 Trabajé con Claude Code como entorno principal y con un método: **primero el plan y recién después el código**, una decisión mía por cada ambigüedad de los datos, y verificación de cada paso (pruebas, llamadas reales a la API y recorrido de la consola en el navegador) antes de avanzar. La IA propuso; yo decidí, cuestioné y fijé el orden.
 
-Estos son dos de mis prompts, **tal cual** los escribí (con mis errores de tipeo), de los momentos en que más me sirvieron:
+Este es uno de mis prompts, **tal cual** lo escribí (con mis errores de tipeo), del momento en que más me sirvió:
 
-**1. Auditar el producto contra el enunciado y probar el front**
-
-> Despues revisamos los prompts, en este momento quiero revisar que cumplimos correctamente con las solicitudes de la prueba tecnica punto por punto. Y verificar  que el front este funcionando , ya que esta simple y sin diseño, los filtros no funcionan correctamente , asignaciones y demas.
->
-> Asi que empezemos por ahii y despues revisamos el readme
-
-*Por qué sirvió:* en vez de dar el trabajo por terminado, pedí comprobarlo contra el enunciado. Salieron, entre otras cosas, que el repositorio estaba público cuando la prueba pide privado, que "Ejecutar" podía aplicar una configuración distinta de la previsualizada, que los filtros no permitían repartir lo filtrado, que un duplicado ya trabajado se asignaba a ciegas y que un filtro por dueño mostraba registros descartados. Todo se corrigió y quedó con pruebas.
-
-**2. Probar el reparto con el caso real y exigir que se contemplara todo lo que importa**
+**Probar el reparto con el caso real y exigir que se contemplara todo lo que importa**
 
 > Hice una prueba pero el caso no se soluciono, porque no estamos comntemplando ni la antiguedad de el asesor, que tan grande es la empresa, si el asesor esta o no en ausencia y tampoco los datos de la actividad.
 >
